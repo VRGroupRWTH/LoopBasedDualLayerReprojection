@@ -1,0 +1,118 @@
+#version 430
+#extension GL_NV_gpu_shader5 : require
+
+#include "shared_defines.glsl"
+#include "shared_math_library.glsl"
+
+layout(local_size_x = LOOP_GENERATOR_WRITE_WORK_GROUP_SIZE_X, local_size_y = LOOP_GENERATOR_WRITE_WORK_GROUP_SIZE_Y, local_size_z = 1) in;
+
+layout(binding = 0) uniform sampler2D depth_buffer;
+layout(binding = 1) uniform usampler2D vector_buffer;
+
+layout(binding = 0, r32ui) uniform readonly uimage2D loop_range_count_buffer;
+
+layout(binding = 0, std430) buffer LoopRangeBuffer
+{
+    LoopRange loop_range_list[];
+};
+
+layout(binding = 1, std430) buffer LoopSegmentBuffer
+{
+    LoopSegment loop_segment_list[];
+};
+
+uniform float depth_max;
+uniform float depth_base_threshold;
+uniform uint cell_buffer_size;
+
+uint get_range_offset(ivec2 cell_coord)
+{
+    uint image_width = imageSize(loop_range_count_buffer).x;
+
+    return (cell_coord.y * image_width + cell_coord.x) * cell_buffer_size;
+}
+
+void main()
+{
+    ivec2 cell_coord = ivec2(gl_GlobalInvocationID);
+    ivec2 image_size = imageSize(loop_range_count_buffer);
+
+    if(any(greaterThanEqual(cell_coord, image_size)))
+    {
+        return;
+    }
+
+    uint range_count = imageLoad(loop_range_count_buffer, cell_coord).x;
+    uint range_offset = get_range_offset(cell_coord);
+    
+    for(uint index = 0; index < range_count; index++)
+    {
+        uint range_index = range_offset + index;
+        uint segment_count = loop_range_list[range_index].segment_count;
+
+        if(segment_count == 0)
+        {
+            continue;
+        }
+
+        ivec2 previous_coord = ivec2(loop_range_list[range_index].previous_coord);
+        ivec2 end_coord = ivec2(loop_range_list[range_index].end_coord);
+
+        ivec2 current_coord = ivec2(loop_range_list[range_index].start_coord);
+        uint current_direction = texelFetch(vector_buffer, previous_coord, 0).x;
+        uint current_segment_offset = loop_range_list[range_index].segment_offset;
+
+        while(true)
+        {
+            uint encoded_direction = texelFetch(vector_buffer, current_coord, 0).x;
+            ivec2 direction = decode_direction(encoded_direction);
+
+            if((encoded_direction & 0x03) != (current_direction & 0x03))
+            {
+                float end_coord_depth = min(texelFetch(depth_buffer, current_coord / 2, 0).x, depth_max);
+
+                bool depth_step = false;
+
+                for(int offset_y = -1; offset_y <= 1; offset_y++)
+                {
+                    for(int offset_x = -1; offset_x <= 1; offset_x++)
+                    {
+                        if(offset_x == 0 && offset_y == 0)
+                        {
+                            continue;
+                        }
+
+                        ivec2 neighbour_offset = ivec2(offset_x, offset_y);
+                        ivec2 neighbour_coord = (current_coord / 2) + neighbour_offset;
+
+                        float neighbour_depth = min(texelFetch(depth_buffer, neighbour_coord, 0).x, depth_max);
+
+                        if(abs(end_coord_depth - neighbour_depth) > depth_base_threshold)
+                        {
+                            depth_step = true;
+                            break;
+                        }
+                    }
+                }
+
+                if(depth_step)
+                {
+                    end_coord_depth = -end_coord_depth; //Encode depth discontinuity using negative depth values
+                }
+
+                loop_segment_list[current_segment_offset].end_coord = u16vec2(current_coord);
+                loop_segment_list[current_segment_offset].end_coord_depth = end_coord_depth;
+
+                current_direction = encoded_direction;
+                current_segment_offset++;
+            }
+
+            current_coord += direction;
+
+            if(all(equal(current_coord, end_coord)))
+            {
+                break;
+            }
+        }
+    }
+}

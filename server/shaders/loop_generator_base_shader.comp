@@ -1,0 +1,186 @@
+#version 430
+#extension GL_NV_gpu_shader5 : require
+
+#include "shared_defines.glsl"
+#include "shared_math_library.glsl"
+
+layout(local_size_x = LOOP_GENERATOR_BASE_WORK_GROUP_SIZE_X, local_size_y = LOOP_GENERATOR_BASE_WORK_GROUP_SIZE_Y, local_size_z = 1) in;
+
+layout(binding = 0) uniform usampler2D vector_buffer;
+layout(binding = 0, r32ui) uniform writeonly uimage2D loop_range_count_buffer;
+
+layout(binding = 0, std430) buffer LoopRangeBuffer
+{
+    LoopRange loop_range_list[];
+};
+
+layout(binding = 1, std430) buffer LoopCounterBuffer
+{
+    LoopCount loop_count;
+};
+
+layout(binding = 2, std430) buffer LoopBuffer
+{
+    Loop loop_list[];
+};
+
+uniform uint cell_buffer_size;
+
+uint get_range_offset(ivec2 cell_coord)
+{
+    uint image_width = imageSize(loop_range_count_buffer).x;
+
+    return (cell_coord.y * image_width + cell_coord.x) * cell_buffer_size;
+}
+
+uint get_flag(uint64_t flag_buffer, ivec2 local_coord)
+{
+    uint offset = local_coord.y * LOOP_GENERATOR_BASE_CELL_SIZE + local_coord.x;
+
+    return (uint(flag_buffer >> offset) & 0x01);
+}
+
+void set_flag(inout uint64_t flag_buffer, ivec2 local_coord)
+{
+    uint offset = local_coord.y * LOOP_GENERATOR_BASE_CELL_SIZE + local_coord.x;
+
+    flag_buffer |= (uint64_t(0x01) << offset);
+}
+
+bool trace_backwards(ivec2 cell_coord, ivec2 global_coord, inout uint64_t flag_buffer, inout ivec2 previous_coord, inout ivec2 start_coord, ivec2 start_direction, inout uint segment_count)
+{
+    ivec2 current_direction = -start_direction;
+
+    while(true)
+    {
+        uint encoded_direction = texelFetch(vector_buffer, start_coord, 0).x;
+        ivec2 direction = decode_direction(encoded_direction >> 2);
+        previous_coord = start_coord + direction;
+
+        if(any(notEqual(current_direction, direction)))
+        {
+            current_direction = direction;
+
+            segment_count++;
+        }
+
+        if(any(lessThan(previous_coord, cell_coord)) || any(greaterThanEqual(previous_coord, cell_coord + LOOP_GENERATOR_BASE_CELL_SIZE)))
+        {
+            break;
+        }
+
+        start_coord = previous_coord;
+        set_flag(flag_buffer, start_coord - cell_coord);
+
+        if(all(equal(start_coord, global_coord)))
+        { 
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void trace_forward(ivec2 cell_coord, inout uint64_t flag_buffer, inout ivec2 end_coord, ivec2 start_direction, inout uint segment_count)
+{
+    ivec2 current_direction = start_direction;
+
+    while(true)
+    {
+        if(any(lessThan(end_coord, cell_coord)) || any(greaterThanEqual(end_coord, cell_coord + LOOP_GENERATOR_BASE_CELL_SIZE)))
+        {
+            break;
+        }
+    
+        set_flag(flag_buffer, end_coord - cell_coord);
+    
+        uint encoded_direction = texelFetch(vector_buffer, end_coord, 0).x;
+        ivec2 direction = decode_direction(encoded_direction);
+        end_coord = end_coord + direction;
+
+        if(any(notEqual(current_direction, direction)))
+        {
+            current_direction = direction;
+
+            segment_count++;
+        }
+    }
+}
+
+void main()
+{
+    ivec2 base_coord = ivec2(gl_GlobalInvocationID);
+    ivec2 image_size = imageSize(loop_range_count_buffer);
+
+    if(any(greaterThanEqual(base_coord, image_size)))
+    {
+        return;
+    }
+
+    ivec2 cell_coord = base_coord * LOOP_GENERATOR_BASE_CELL_SIZE;
+    uint64_t flag_buffer = packUint2x32(uvec2(0xAA55AA54, 0x2A55AA55));
+    
+    uint range_offset = get_range_offset(base_coord);
+    uint range_count = 0;
+
+    for(uint local_y = 0; local_y < LOOP_GENERATOR_BASE_CELL_SIZE; local_y++)
+    {
+        for(uint local_x = 0; local_x < LOOP_GENERATOR_BASE_CELL_SIZE; local_x++)
+        {
+            ivec2 local_coord = ivec2(local_x, local_y);
+            
+            if(get_flag(flag_buffer, local_coord) > 0)
+            {
+                continue;
+            }
+            
+            ivec2 global_coord = cell_coord + local_coord;
+            uint encoded_direction = texelFetch(vector_buffer, global_coord, 0).x;
+
+            if(encoded_direction == 0)
+            {
+                continue;
+            }
+
+            ivec2 start_forward_direction = decode_direction(encoded_direction);
+            ivec2 start_backward_direction = decode_direction(encoded_direction >> 2);
+            uint range_index = range_offset + range_count;
+            range_count++;
+
+            ivec2 previous_coord = global_coord;
+            ivec2 start_coord = global_coord;
+            uint segment_count = 0;
+
+            if(trace_backwards(cell_coord, global_coord, flag_buffer, previous_coord, start_coord, start_forward_direction, segment_count))
+            {
+                uint loop_index = atomicAdd(loop_count.loop_counter, 1);
+                uint segment_offset = atomicAdd(loop_count.segment_counter, segment_count);
+                
+                loop_list[loop_index].segment_count = segment_count;
+                loop_list[loop_index].segment_offset = segment_offset;
+
+                loop_range_list[range_index].previous_coord = u16vec2(global_coord + start_backward_direction);
+                loop_range_list[range_index].start_coord = u16vec2(global_coord);
+                loop_range_list[range_index].end_coord = u16vec2(global_coord);
+                loop_range_list[range_index].flag = 1;
+                loop_range_list[range_index].segment_count = segment_count;
+                loop_range_list[range_index].segment_offset = segment_offset;
+            }
+
+            else
+            {
+                ivec2 end_coord = global_coord;
+
+                trace_forward(cell_coord, flag_buffer, end_coord, start_forward_direction, segment_count);
+
+                loop_range_list[range_index].previous_coord = u16vec2(previous_coord);
+                loop_range_list[range_index].start_coord = u16vec2(start_coord);
+                loop_range_list[range_index].end_coord = u16vec2(end_coord);
+                loop_range_list[range_index].flag = 0;
+                loop_range_list[range_index].segment_count = segment_count;
+            }
+        }
+    }
+    
+    imageStore(loop_range_count_buffer, base_coord, ivec4(range_count));
+}

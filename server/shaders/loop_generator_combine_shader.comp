@@ -1,0 +1,242 @@
+#version 430
+#extension GL_NV_gpu_shader5 : require
+#extension GL_ARB_compute_variable_group_size : require
+
+#include "shared_defines.glsl"
+#include "shared_math_library.glsl"
+
+layout(local_size_variable) in;
+
+layout(binding = 0, r32ui) uniform readonly uimage2D src_loop_range_count_buffer;
+layout(binding = 1, r32ui) uniform writeonly uimage2D dst_loop_range_count_buffer;
+
+layout(binding = 0, std430) buffer SrcLoopRangeBuffer
+{
+    LoopRange src_loop_range_list[];
+};
+
+layout(binding = 1, std430) buffer DstLoopRangeBuffer
+{
+    LoopRange dst_loop_range_list[];
+};
+
+layout(binding = 2, std430) buffer LoopCounterBuffer
+{
+    LoopCount loop_count;
+};
+
+layout(binding = 3, std430) buffer LoopBuffer
+{
+    Loop loop_list[];
+};
+
+uniform uint cell_size_x;
+uniform uint cell_size_y;
+
+uniform uint src_cell_buffer_size;
+uniform uint dst_cell_buffer_size;
+
+shared uint dst_range_count;
+
+uint get_src_range_offset(ivec2 cell_coord)
+{
+    uint image_width = imageSize(src_loop_range_count_buffer).x;
+
+    return (cell_coord.y * image_width + cell_coord.x) * src_cell_buffer_size;
+}
+
+uint get_dst_range_offset(ivec2 cell_coord)
+{
+    uint image_width = imageSize(dst_loop_range_count_buffer).x;
+
+    return (cell_coord.y * image_width + cell_coord.x) * dst_cell_buffer_size;
+}
+
+void trace_line(ivec2 cell_coord, ivec2 cell_min, ivec2 cell_size, inout ivec2 end_coord, inout uint segment_count)
+{
+    while(true)
+    {
+        if(any(lessThan(end_coord, cell_min)) || any(greaterThanEqual(end_coord, cell_min + cell_size)))
+        {
+            break;
+        }
+
+        ivec2 src_cell_size = ivec2(cell_size_x, cell_size_y);
+        ivec2 src_offset = (end_coord - cell_min) / src_cell_size;
+        ivec2 src_cell_coord = cell_coord * 2 + src_offset;
+
+        uint src_range_count = imageLoad(src_loop_range_count_buffer, src_cell_coord).x;
+        uint src_range_offset = get_src_range_offset(src_cell_coord);
+
+        bool found = false;
+
+        for(uint index = 0; index < src_range_count; index++)
+        {
+            uint src_range_index = src_range_offset + index;
+            ivec2 start_coord = ivec2(src_loop_range_list[src_range_index].start_coord);
+            
+            if(all(equal(end_coord, start_coord)))
+            {
+                src_loop_range_list[src_range_index].flag = 1;
+                
+                segment_count += src_loop_range_list[src_range_index].segment_count;
+                end_coord = ivec2(src_loop_range_list[src_range_index].end_coord);
+                
+                found = true;
+                
+                break;
+            }
+        }
+
+        if(!found)
+        {
+            break;
+        }
+    }
+}
+
+bool trace_loop(ivec2 cell_coord, ivec2 cell_min, ivec2 cell_size, ivec2 quadrant_offset, uint quadrant_index, ivec2 start_coord, inout ivec2 end_coord, inout uint segment_count)
+{
+    while(true)
+    {
+        ivec2 src_cell_size = ivec2(cell_size_x, cell_size_y);
+        ivec2 src_offset = (end_coord - cell_min) / src_cell_size;
+
+        if(src_offset.x + src_offset.y * 2 < quadrant_offset.x + quadrant_offset.y * 2)
+        {
+            return false; //Loop already processed
+        }
+
+        ivec2 src_cell_coord = cell_coord * 2 + src_offset;
+
+        uint src_range_count = imageLoad(src_loop_range_count_buffer, src_cell_coord).x;
+        uint src_range_offset = get_src_range_offset(src_cell_coord);
+
+        bool found = false;
+
+        for(uint index = 0; index < src_range_count; index++)
+        {
+            uint src_range_index = src_range_offset + index;
+            ivec2 current_start_coord = ivec2(src_loop_range_list[src_range_index].start_coord);
+
+            if(all(equal(end_coord, current_start_coord)))
+            {
+                if(all(equal(start_coord, current_start_coord)))
+                {
+                    return true; //Loop closed
+                }
+
+                if(all(equal(src_offset, quadrant_offset)) && index < quadrant_index)
+                {
+                    return false; //Loop already processed
+                }
+
+                segment_count += src_loop_range_list[src_range_index].segment_count;
+                end_coord = ivec2(src_loop_range_list[src_range_index].end_coord);
+
+                found = true;
+                
+                break;
+            }
+        }
+
+        if(!found)
+        {
+            break;
+        }
+    }
+
+    return false;
+}
+
+void main()
+{
+    ivec2 cell_coord = ivec2(gl_GlobalInvocationID.yz) / 2;
+    ivec2 dst_image_size = imageSize(dst_loop_range_count_buffer);
+
+    if(any(greaterThanEqual(cell_coord, dst_image_size)))
+    {
+        return;
+    }
+    
+    ivec2 cell_size = ivec2(cell_size_x, cell_size_y) * 2;
+    ivec2 cell_min = cell_coord * cell_size;
+
+    ivec2 src_offset = ivec2(gl_LocalInvocationID.yz);
+    ivec2 src_cell_coord = cell_coord * 2 + src_offset;
+
+    uint src_range_count = imageLoad(src_loop_range_count_buffer, src_cell_coord).x;
+    uint src_range_offset = get_src_range_offset(src_cell_coord);
+    uint dst_range_offset = get_dst_range_offset(cell_coord);
+    dst_range_count = 0;
+
+    barrier();
+    
+    for(uint index = gl_LocalInvocationID.x; index < src_range_count; index += gl_LocalGroupSizeARB.x)
+    {
+        uint src_range_index = src_range_offset + index;
+        ivec2 previous_coord = ivec2(src_loop_range_list[src_range_index].previous_coord);
+        
+        if(!is_outside_cell(previous_coord, cell_min, cell_min + cell_size))
+        {
+            continue;
+        }
+        
+        src_loop_range_list[src_range_index].flag = 1;
+        
+        ivec2 end_coord = ivec2(src_loop_range_list[src_range_index].end_coord);
+        uint segment_count = src_loop_range_list[src_range_index].segment_count;
+
+        trace_line(cell_coord, cell_min, cell_size, end_coord, segment_count);
+
+        uint dst_range_index = dst_range_offset + atomicAdd(dst_range_count, 1);
+        dst_loop_range_list[dst_range_index].previous_coord = u16vec2(previous_coord);
+        dst_loop_range_list[dst_range_index].start_coord = src_loop_range_list[src_range_index].start_coord;
+        dst_loop_range_list[dst_range_index].end_coord = u16vec2(end_coord);
+        dst_loop_range_list[dst_range_index].flag = 0;
+        dst_loop_range_list[dst_range_index].segment_count = segment_count;
+    }
+
+    barrier();
+
+    for(uint index = gl_LocalInvocationID.x; index < src_range_count; index += gl_LocalGroupSizeARB.x)
+    {
+        uint src_range_index = src_range_offset + index;
+        uint flag = src_loop_range_list[src_range_index].flag;
+        
+        if(flag > 0)
+        {
+            continue;
+        }
+        
+        ivec2 start_coord = ivec2(src_loop_range_list[src_range_index].start_coord);
+        ivec2 end_coord = ivec2(src_loop_range_list[src_range_index].end_coord);
+        uint segment_count = src_loop_range_list[src_range_index].segment_count;
+        
+        if(!trace_loop(cell_coord, cell_min, cell_size, src_offset, index, start_coord, end_coord, segment_count))
+        {
+            continue; //Loop already processed
+        }
+        
+        uint loop_index = atomicAdd(loop_count.loop_counter, 1);
+        uint segment_offset = atomicAdd(loop_count.segment_counter, segment_count);
+
+        loop_list[loop_index].segment_count = segment_count;
+        loop_list[loop_index].segment_offset = segment_offset;
+
+        uint dst_range_index = dst_range_offset + atomicAdd(dst_range_count, 1);
+        dst_loop_range_list[dst_range_index].previous_coord = u16vec2(start_coord);
+        dst_loop_range_list[dst_range_index].start_coord = u16vec2(start_coord);
+        dst_loop_range_list[dst_range_index].end_coord = u16vec2(start_coord);
+        dst_loop_range_list[dst_range_index].flag = 1;
+        dst_loop_range_list[dst_range_index].segment_count = segment_count;
+        dst_loop_range_list[dst_range_index].segment_offset = segment_offset;
+    }
+
+    barrier();
+
+    if(gl_LocalInvocationIndex == 0)
+    {
+        imageStore(dst_loop_range_count_buffer, cell_coord, uvec4(dst_range_count));
+    }
+}

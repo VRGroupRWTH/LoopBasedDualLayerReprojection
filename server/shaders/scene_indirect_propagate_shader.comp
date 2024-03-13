@@ -1,0 +1,231 @@
+#version 430
+#extension GL_NV_gpu_shader5 : require
+
+#include "shared_defines.glsl"
+#include "shared_math_library.glsl"
+#include "shared_indirect_library.glsl"
+
+layout(local_size_x = SCENE_INDIRECT_PROPAGATE_WORK_GROUP_SIZE_X, local_size_y = SCENE_INDIRECT_PROPAGATE_WORK_GROUP_SIZE_Y, local_size_z = SCENE_INDIRECT_PROPAGATE_WORK_GROUP_SIZE_Z) in;
+
+layout(binding = 0) uniform sampler3D src_red_distribution_buffer;
+layout(binding = 1) uniform sampler3D src_green_distribution_buffer;
+layout(binding = 2) uniform sampler3D src_blue_distribution_buffer;
+
+layout(binding = 3) uniform usampler3D visibility_x_buffer;
+layout(binding = 4) uniform usampler3D visibility_y_buffer;
+layout(binding = 5) uniform usampler3D visibility_z_buffer;
+
+layout(binding = 0, rgba16f) uniform writeonly image3D dst_red_distribution_buffer;
+layout(binding = 1, rgba16f) uniform writeonly image3D dst_green_distribution_buffer;
+layout(binding = 2, rgba16f) uniform writeonly image3D dst_blue_distribution_buffer;
+
+layout(binding = 3, rgba16f) uniform image3D acc_red_distribution_buffer;
+layout(binding = 4, rgba16f) uniform image3D acc_green_distribution_buffer;
+layout(binding = 5, rgba16f) uniform image3D acc_blue_distribution_buffer;
+
+uniform uvec3 scene_indirect_cell_count;
+
+const ivec3 neighbour_offsets[6] = ivec3[6]
+(
+    ivec3( 1, 0, 0), //+X
+    ivec3(-1, 0, 0), //-X
+    ivec3( 0, 1, 0), //+Y
+    ivec3( 0,-1, 0), //-Y
+    ivec3( 0, 0, 1), //+Z
+    ivec3( 0, 0,-1)  //-Z
+);
+
+const mat3 neighbour_orientations[6] = mat3[6]
+(
+    mat3(vec3(-1.0, 0.0, 0.0), vec3( 0.0, 1.0, 0.0), vec3( 0.0, 0.0, 1.0)), //+X
+    mat3(vec3( 1.0, 0.0, 0.0), vec3( 0.0, 1.0, 0.0), vec3( 0.0, 0.0, 1.0)), //-X
+    mat3(vec3( 0.0,-1.0, 0.0), vec3( 1.0, 0.0, 0.0), vec3( 0.0, 0.0, 1.0)), //+Y
+    mat3(vec3( 0.0, 1.0, 0.0), vec3( 1.0, 0.0, 0.0), vec3( 0.0, 0.0, 1.0)), //-Y
+    mat3(vec3( 0.0, 0.0,-1.0), vec3( 0.0, 1.0, 0.0), vec3( 1.0, 0.0, 0.0)), //+Z
+    mat3(vec3( 0.0, 0.0, 1.0), vec3( 0.0, 1.0, 0.0), vec3( 1.0, 0.0, 0.0))  //-Z
+);
+
+//NOTE: All directions derived for the case -X
+//      A side eval direction correspond to the center directions of that intensity cone.
+const vec3 direct_eval_direction = vec3(1.0, 0.0, 0.0);
+const vec3 side_eval_directions[4] = vec3[4]
+(
+    vec3(0.85065080, 0.52573111, 0.0),
+    vec3(0.85065080,-0.52573111, 0.0),
+    vec3(0.85065080, 0.0, 0.52573111),
+    vec3(0.85065080, 0.0,-0.52573111)
+);
+
+//NOTE: All directions derived for the case -X
+const vec3 direct_emit_direction = vec3(1.0, 0.0, 0.0);
+const vec3 side_emit_directions[4] = vec3[4]
+(
+    vec3(0.0, 1.0, 0.0),
+    vec3(0.0,-1.0, 0.0),
+    vec3(0.0, 0.0, 1.0),
+    vec3(0.0, 0.0,-1.0)
+);
+
+//NOTE: Solid angle for direct and side face.
+const float direct_solid_angle = 0.40066968;
+const float side_solid_angle = 0.42343135;
+
+const uint visibility_buffers[6] = uint[6]
+(
+    0, //+X
+    0, //-X
+    1, //+Y
+    1, //-Y
+    2, //+Z
+    2  //-Z
+);
+
+const uint visibility_mask[6] = uint[6]
+(
+    0x000001FF, //+X
+    0x000001FF, //-X
+    0x001C0E07, //+Y
+    0x001C0E07, //-Y
+    0x01249249, //+Z
+    0x01249249  //-Z
+);
+
+const uint cell_blocked_offset[6] = uint[6]
+(
+    18,
+    0,
+    6,
+    0,
+    2,
+    0
+);
+
+const uint neighbour_blocked_offset[6] = uint[6]
+(
+    0,
+    18,
+    0,
+    6,
+    0,
+    2
+);
+
+float compute_visibility(ivec3 cell_coord, ivec3 neighbour_coord, uint neighbour)
+{
+    uint visibility_buffer = visibility_buffers[neighbour];
+
+    uint cell_blocked = 0;
+    uint neighbour_blocked = 0;
+
+    //NOTE: Use visibility for X direction
+    if(visibility_buffer == 0)
+    {
+        cell_blocked = texelFetch(visibility_x_buffer, cell_coord, 0).x;
+        neighbour_blocked = texelFetch(visibility_x_buffer, neighbour_coord, 0).x;
+    }
+
+    //NOTE: Use visibility for Y direction
+    else if(visibility_buffer == 1)
+    {
+        cell_blocked = texelFetch(visibility_y_buffer, cell_coord, 0).x;
+        neighbour_blocked = texelFetch(visibility_y_buffer, neighbour_coord, 0).x;
+    }
+
+    //NOTE: Use visibility for Z direction
+    else
+    {
+        cell_blocked = texelFetch(visibility_z_buffer, cell_coord, 0).x;
+        neighbour_blocked = texelFetch(visibility_z_buffer, neighbour_coord, 0).x;
+    }
+
+    uint direction_blocked = 0;
+    direction_blocked |= cell_blocked >> cell_blocked_offset[neighbour];
+    direction_blocked |= neighbour_blocked >> neighbour_blocked_offset[neighbour];
+
+    return bitCount((~direction_blocked) & visibility_mask[neighbour]) / 9.0;
+}
+
+void propagate_neighbour(ivec3 cell_coord, uint neighbour, inout vec4 red_distribution, inout vec4 green_distribution, inout vec4 blue_distribution)
+{
+    ivec3 neighbour_coord = cell_coord + neighbour_offsets[neighbour];
+    mat3 neighbour_orientation = neighbour_orientations[neighbour];
+
+    if (is_outside_volume(neighbour_coord, ivec3(scene_indirect_cell_count)))
+    {
+        return;
+    }
+
+    //----- Visibility ----------------------------------------------
+    
+    float visibility = compute_visibility(cell_coord, neighbour_coord, neighbour);
+
+    //----- Side Faces ----------------------------------------------
+
+    vec4 neighbour_red_distribution = texelFetch(src_red_distribution_buffer, neighbour_coord, 0);
+    vec4 neighbour_green_distribution = texelFetch(src_green_distribution_buffer, neighbour_coord, 0);
+    vec4 neighbour_blue_distribution = texelFetch(src_blue_distribution_buffer, neighbour_coord, 0);
+
+    for (uint side = 0; side < 4; side++)
+    {
+        vec3 eval_direction = neighbour_orientation * side_eval_directions[side];
+        vec3 emit_direction = neighbour_orientation * side_emit_directions[side];
+
+        vec3 intensity = vec3(0.0); //NOTE: Where intensity is in watt / str
+        intensity.x = max(0.0, spherical_harmonic_evaluate(eval_direction, neighbour_red_distribution));
+        intensity.y = max(0.0, spherical_harmonic_evaluate(eval_direction, neighbour_green_distribution));
+        intensity.z = max(0.0, spherical_harmonic_evaluate(eval_direction, neighbour_blue_distribution));
+
+        //NOTE: Where side_solid_angle * intensity is in watt
+        red_distribution += (side_solid_angle * intensity.x) * visibility * spherical_harmonic_cosine_lobe(emit_direction);
+        green_distribution += (side_solid_angle * intensity.y) * visibility * spherical_harmonic_cosine_lobe(emit_direction);
+        blue_distribution += (side_solid_angle * intensity.z) * visibility * spherical_harmonic_cosine_lobe(emit_direction);
+    }
+
+    //----- Direct Face -----------------------------------------------
+
+    vec3 eval_direction = neighbour_orientation * direct_eval_direction;
+    vec3 emit_direction = neighbour_orientation * direct_emit_direction;
+
+    vec3 intensity = vec3(0.0); //NOTE: Where intensity is in watt / str
+    intensity.x = max(0.0, spherical_harmonic_evaluate(eval_direction, neighbour_red_distribution));
+    intensity.y = max(0.0, spherical_harmonic_evaluate(eval_direction, neighbour_green_distribution));
+    intensity.z = max(0.0, spherical_harmonic_evaluate(eval_direction, neighbour_blue_distribution));
+
+    //NOTE: Where side_solid_angle * intensity is in watt
+    red_distribution += (direct_solid_angle * intensity.x) * visibility * spherical_harmonic_cosine_lobe(emit_direction);
+    green_distribution += (direct_solid_angle * intensity.y) * visibility * spherical_harmonic_cosine_lobe(emit_direction);
+    blue_distribution += (direct_solid_angle * intensity.z) * visibility * spherical_harmonic_cosine_lobe(emit_direction);
+
+    //-----------------------------------------------------------------
+}
+
+void main()
+{
+    ivec3 cell_coord = ivec3(gl_GlobalInvocationID);
+
+    if (is_outside_volume(cell_coord, ivec3(scene_indirect_cell_count)))
+    {
+        return;
+    }
+
+    vec4 red_distribution = vec4(0.0);
+    vec4 green_distribution = vec4(0.0);
+    vec4 blue_distribution = vec4(0.0);
+
+    for (uint neighbour = 0; neighbour < 6; neighbour++)
+    {
+        propagate_neighbour(cell_coord, neighbour, red_distribution, green_distribution, blue_distribution);
+    }
+
+    imageStore(dst_red_distribution_buffer, cell_coord, red_distribution);
+    imageStore(dst_green_distribution_buffer, cell_coord, green_distribution);
+    imageStore(dst_blue_distribution_buffer, cell_coord, blue_distribution);
+
+    red_distribution += imageLoad(acc_red_distribution_buffer, cell_coord);
+    green_distribution += imageLoad(acc_green_distribution_buffer, cell_coord);
+    blue_distribution += imageLoad(acc_blue_distribution_buffer, cell_coord);
+
+    imageStore(acc_red_distribution_buffer, cell_coord, red_distribution);
+    imageStore(acc_green_distribution_buffer, cell_coord, green_distribution);
+    imageStore(acc_blue_distribution_buffer, cell_coord, blue_distribution);
+}

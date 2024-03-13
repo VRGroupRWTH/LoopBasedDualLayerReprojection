@@ -1,0 +1,96 @@
+#ifndef SHADER_SHARED_DEFINES
+#define SHADER_SHARED_DEFINES
+
+#define LOOP_GENERATOR_BASE_CELL_SIZE 8
+#define LOOP_GENERATOR_INVALID_OBJECT_ID 0xFFFFFFFF
+
+#define LOOP_GENERATOR_MAX_LOOP_COUNT         20000  //Increase value if not enough
+#define LOOP_GENERATOR_MAX_LOOP_SEGMENT_COUNT 200000 //Increase value if not enough
+
+#define LOOP_GENERATOR_VECTOR_WORK_GROUP_SIZE_X 32
+#define LOOP_GENERATOR_VECTOR_WORK_GROUP_SIZE_Y 24
+#define LOOP_GENERATOR_BASE_WORK_GROUP_SIZE_X 12
+#define LOOP_GENERATOR_BASE_WORK_GROUP_SIZE_Y 8
+#define LOOP_GENERATOR_WRITE_WORK_GROUP_SIZE_X 12
+#define LOOP_GENERATOR_WRITE_WORK_GROUP_SIZE_Y 8
+
+#define LINE_GENERATOR_EDGE_WORK_GROUP_SIZE_X 32
+#define LINE_GENERATOR_EDGE_WORK_GROUP_SIZE_Y 24
+#define LINE_GENERATOR_QUAD_TREE_WORK_GROUP_SIZE_X 32
+#define LINE_GENERATOR_QUAD_TREE_WORK_GROUP_SIZE_Y 24
+
+#define SCENE_MATERIAL_BASE_COLOR_TEXTURE_BINDING_POINT        32
+#define SCENE_MATERIAL_MATERIAL_TEXTURE_BINDING_POINT          33
+#define SCENE_MATERIAL_NORMAL_TEXTURE_BINDING_POINT            34
+#define SCENE_MATERIAL_EMISSIVE_TEXTURE_BINDING_POINT          35
+#define SCENE_LIGHT_DEPTH_ARRAY_BUFFER_BINDING_POINT           36
+#define SCENE_LIGHT_DEPTH_CUBE_ARRAY_BUFFER_BINDING_POINT      37
+#define SCENE_INDIRECT_RED_DISTRIBUTION_BUFFER_BINDING_POINT   38
+#define SCENE_INDIRECT_GREEN_DISTRIBUTION_BUFFER_BINDING_POINT 39
+#define SCENE_INDIRECT_BLUE_DISTRIBUTION_BUFFER_BINDING_POINT  40
+#define SCENE_INDIRECT_OPACITY_BUFFER_BINDING_POINT            41
+
+#define SCENE_LIGHT_BUFFER_BINDING_POINT 0
+
+#define SCENE_INDIRECT_PROPAGATE_WORK_GROUP_SIZE_X 8
+#define SCENE_INDIRECT_PROPAGATE_WORK_GROUP_SIZE_Y 8
+#define SCENE_INDIRECT_PROPAGATE_WORK_GROUP_SIZE_Z 8
+
+#define SCENE_INDIRECT_OPACITY_WORK_GROUP_SIZE_X 8
+#define SCENE_INDIRECT_OPACITY_WORK_GROUP_SIZE_Y 8
+#define SCENE_INDIRECT_OPACITY_WORK_GROUP_SIZE_Z 8
+
+#define SCENE_LIGHT_BUFFER_RESOLUTION 2048
+
+#define SCENE_LIGHT_TYPE_DIRECTIONAL 0
+#define SCENE_LIGHT_TYPE_SPOT        1
+#define SCENE_LIGHT_TYPE_POINT       2
+
+struct Light
+{
+    vec3 position;
+    uint type;
+
+    vec3 direction;
+    float inner_angle;
+
+    vec3 color;
+    float outer_angle;
+
+    uvec3 padding;
+    uint light_layer_index;
+
+    mat4 light_projection_matrix;
+    mat4 light_matrix;
+};
+
+struct LoopCount
+{
+    uint loop_counter;
+    uint segment_counter;
+};
+
+struct Loop
+{
+    uint segment_count;
+    uint segment_offset;
+};
+
+struct LoopRange
+{
+    u16vec2 previous_coord; //Lies outside the cell
+    u16vec2 start_coord;    //Lies inside the cell
+    u16vec2 end_coord;      //Lies outside the cell
+    uint flag;
+
+    uint segment_count;
+    uint segment_offset;
+};
+
+struct LoopSegment
+{
+    u16vec2 end_coord;
+    float end_coord_depth;
+};
+
+#endif

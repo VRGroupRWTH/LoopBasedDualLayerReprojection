@@ -1,0 +1,231 @@
+#version 430
+#extension GL_NV_gpu_shader5 : require
+
+#include "shared_defines.glsl"
+#include "shared_math_library.glsl"
+
+layout(local_size_x = LOOP_GENERATOR_VECTOR_WORK_GROUP_SIZE_X, local_size_y = LOOP_GENERATOR_VECTOR_WORK_GROUP_SIZE_Y, local_size_z = 1) in;
+
+layout(binding = 0) uniform sampler2D depth_buffer;
+layout(binding = 1) uniform sampler2D normal_buffer;
+layout(binding = 2) uniform usampler2D object_id_buffer;
+layout(binding = 0, r8ui) uniform writeonly uimage2D vector_buffer;
+
+uniform float depth_max;
+uniform float depth_base_threshold;
+uniform float depth_slope_threshold;
+uniform float normal_threshold;
+uniform bool use_normals;
+uniform bool use_object_ids;
+
+ivec2 adjacent_offsets[4] = ivec2[4]
+(
+    ivec2(0, 0),
+    ivec2(1, 0),
+    ivec2(1, 1),
+    ivec2(0, 1)
+);
+
+uint forward_mask[4] = uint[4]
+(
+    0x08,
+    0x01,
+    0x02,
+    0x04
+);
+
+ivec2 forward_open[4] = ivec2[4]
+(
+    ivec2( 0,  1),
+    ivec2(-1,  0),
+    ivec2( 0, -1),
+    ivec2( 1,  0)
+);
+
+ivec2 forward_closed[4] = ivec2[4]
+(
+    ivec2(-1,  0),
+    ivec2( 0, -1),
+    ivec2( 1,  0),
+    ivec2( 0,  1)
+);
+
+uint backward_mask[4] = uint[4]
+(
+    0x01,
+    0x02,
+    0x04,
+    0x08
+);
+
+ivec2 backward_open[4] = ivec2[4]
+(
+    ivec2( 1,  0),
+    ivec2( 0,  1),
+    ivec2(-1,  0),
+    ivec2( 0, -1)
+);
+
+ivec2 backward_closed[4] = ivec2[4]
+(
+    ivec2( 0, -1),
+    ivec2( 1,  0),
+    ivec2( 0,  1),
+    ivec2(-1,  0)
+);
+
+void load_sample(ivec2 coord, inout float depth, inout vec3 normal, inout uint object_id)
+{
+    ivec2 image_size = ivec2(textureSize(depth_buffer, 0).xy);
+
+    if(is_outside(coord, image_size))
+    {
+        depth = -1.0;
+        normal = vec3(0.0, 0.0, 1.0);
+    }
+
+    else
+    {
+        depth = texelFetch(depth_buffer, coord, 0).x;
+
+        if(depth < depth_max)
+        {
+            if(use_normals)
+            {
+                normal = decode_normal(texelFetch(normal_buffer, coord, 0).xy);
+            }
+
+            else
+            {
+                normal = vec3(0.0, 0.0, 1.0);
+            }
+
+            if(use_object_ids)
+            {
+                object_id = texelFetch(object_id_buffer, coord, 0).x;
+            }
+
+            else
+            {
+                object_id = LOOP_GENERATOR_INVALID_OBJECT_ID;
+            }
+        }
+
+        else
+        {
+            depth = depth_max;
+            normal = vec3(0.0, 0.0, 1.0);
+            object_id = LOOP_GENERATOR_INVALID_OBJECT_ID;
+        }
+    }
+}
+
+bool compare_samples(float depth1, vec3 normal1, uint object_id1, float depth2, vec3 normal2, uint object_id2)
+{
+    float slope = 1.0 - max(normal1.z, normal2.z);
+
+    float delta_depth = abs(depth1 - depth2);
+    float delta_normal = acos(dot(normal1, normal2));
+
+    if(delta_depth >= depth_base_threshold + slope * depth_slope_threshold || delta_normal >= normal_threshold || object_id1 != object_id2)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+void main()
+{
+    ivec2 base_coord = ivec2(gl_GlobalInvocationID);
+    ivec2 src_image_size = ivec2(textureSize(depth_buffer, 0).xy);
+
+    if(any(greaterThan(base_coord, src_image_size)))
+    {
+        return;
+    }
+
+    float first_depth;
+    vec3 first_normal;
+    uint first_object_id;
+    
+    vec3 last_normal;
+    float last_depth;
+    uint last_object_id;
+
+    uint step_bitfield = 0;
+    uint step_mask = 0x01;
+
+    for(uint index = 0; index < 4; index++)
+    {
+        ivec2 adjacent_coord = (base_coord - 1) + adjacent_offsets[index];
+        float adjacent_depth;
+        vec3 adjacent_normal;
+        uint adjacent_object_id;
+
+        load_sample(adjacent_coord, adjacent_depth, adjacent_normal, adjacent_object_id);
+
+        if(index == 0)
+        {
+            first_depth = adjacent_depth;
+            first_normal = adjacent_normal;
+            first_object_id = adjacent_object_id;
+        }
+
+        else
+        {
+            if(compare_samples(last_depth, last_normal, last_object_id, adjacent_depth, adjacent_normal, adjacent_object_id))
+            {
+                step_bitfield |= step_mask;
+            }
+
+            step_mask <<= 1;
+        }
+
+        last_depth = adjacent_depth;
+        last_normal = adjacent_normal;
+        last_object_id = adjacent_object_id;
+    }
+
+    if(compare_samples(last_depth, last_normal, last_object_id, first_depth, first_normal, first_object_id))
+    {
+        step_bitfield |= step_mask;
+    }
+
+    if(step_bitfield == 0)
+    {
+        return;
+    }
+
+    ivec2 dst_image_size = ivec2(imageSize(vector_buffer).xy);
+
+    for(uint index = 0; index < 4; index++)
+    {
+        ivec2 adjacent_coord = (base_coord * 2 - 1) + adjacent_offsets[index];
+
+        if(is_outside(adjacent_coord, dst_image_size))
+        {
+            continue;
+        }
+
+        ivec4 direction = ivec4(0);
+        direction.xy = forward_open[index];
+        direction.zw = backward_open[index];
+
+        if((step_bitfield & forward_mask[index]) != 0)
+        {
+            direction.xy = forward_closed[index];
+        }
+
+        if((step_bitfield & backward_mask[index]) != 0)
+        {
+            direction.zw = backward_closed[index];
+        }
+
+        uint encoded_direction = 0;
+        encoded_direction |= encode_direction(direction.xy);
+        encoded_direction |= encode_direction(direction.zw) << 2;
+
+        imageStore(vector_buffer, adjacent_coord, uvec4(encoded_direction));
+    }
+}

@@ -1,0 +1,131 @@
+#version 430
+#extension GL_NV_gpu_shader5 : require
+
+#include "shared_defines.glsl"
+#include "shared_math_library.glsl"
+
+layout(local_size_x = LINE_GENERATOR_EDGE_WORK_GROUP_SIZE_X, local_size_y = LINE_GENERATOR_EDGE_WORK_GROUP_SIZE_Y, local_size_z = 1) in;
+
+layout(binding = 0, r8) uniform writeonly image2D edge_buffer;
+
+layout(binding = 0) uniform sampler2D depth_buffer;
+layout(binding = 1) uniform sampler2D normal_buffer;
+
+uniform float depth_max;
+uniform float laplace_threshold;
+uniform float normal_scale;
+
+bool check_depth(ivec2 coord, ivec2 image_size)
+{
+    for(int offset_y = -1; offset_y <= 1; offset_y++)
+    {
+        for(int offset_x = -1; offset_x <= 1; offset_x++)
+        {
+            ivec2 sample_coord = coord + ivec2(offset_x, offset_y);
+
+            if(sample_coord.x < 0 || sample_coord.x >= image_size.x)
+            {
+                continue;
+            }
+
+            if(sample_coord.y < 0 || sample_coord.y >= image_size.y)
+            {
+                continue;
+            }
+
+            float depth = texelFetch(depth_buffer, sample_coord, 0).x;
+            
+            if(depth <= depth_max)
+            {
+                return true;
+            }
+        }   
+    }
+
+    return false;
+}
+
+float compute_laplacian(ivec2 coord, ivec2 image_size)
+{
+    if(coord.x - 1 < 0 || coord.x + 1 >= image_size.x)
+    {
+        return 0.0;
+    }
+
+    if(coord.y - 1 < 0 || coord.y + 1 >= image_size.y)
+    {
+        return 0.0;
+    }
+
+    float laplacian = 0.0;
+
+    for(int offset_y = -1; offset_y <= 1; offset_y++)
+    {
+        for(int offset_x = -1; offset_x <= 1; offset_x++)
+        {
+            float depth = texelFetch(depth_buffer, coord + ivec2(offset_x, offset_y), 0).x;
+            float weight = -1.0;
+
+            if(offset_x == 0 && offset_y == 0)
+            {
+                weight = 8.0;
+            }    
+
+            laplacian += weight * depth;
+        }   
+    }
+
+    if(laplacian > laplace_threshold)
+    {
+        return 1.0;
+    }
+
+    return 0.0;
+}
+
+float compute_normal_change(ivec2 coord, ivec2 image_size)
+{
+    if(coord.x < 0 || coord.x + 1 >= image_size.x)
+    {
+        return 0.0;
+    }
+
+    if(coord.y < 0 || coord.y + 1 >= image_size.y)
+    {
+        return 0.0;
+    }
+
+    vec3 normal_00 = normalize(texelFetch(normal_buffer, coord, 0).xyz);
+    vec3 normal_10 = normalize(texelFetch(normal_buffer, coord + ivec2(1, 0), 0).xyz);
+    vec3 normal_01 = normalize(texelFetch(normal_buffer, coord + ivec2(0, 1), 0).xyz);
+
+    vec2 normal_delta = vec2(0.0);
+    normal_delta.x = dot(normal_00, normal_10);
+    normal_delta.y = dot(normal_00, normal_01);
+
+    return normal_scale * max(1.0 - normal_delta.x, 1.0 - normal_delta.y);
+}
+
+void main()
+{
+    ivec2 coord = ivec2(gl_GlobalInvocationID);
+    ivec2 image_size = imageSize(edge_buffer);
+
+    if(is_outside(coord, image_size))
+    {
+       return; 
+    }
+
+    if(!check_depth(coord, image_size))
+    {
+        imageStore(edge_buffer, coord, vec4(0.0));
+
+        return;
+    }
+
+    float laplacian = compute_laplacian(coord, image_size);
+    float normal_change = compute_normal_change(coord, image_size);
+    float edge = max(laplacian, normal_change);
+
+    imageStore(edge_buffer, coord, vec4(edge));
+}

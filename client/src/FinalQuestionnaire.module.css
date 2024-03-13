@@ -1,0 +1,18 @@
+.formGroup {
+    margin: 1.6em 0;
+}
+
+.conditionOrderGroup {
+    display: flex;
+    gap: 10px;
+}
+
+.conditionOrderLegend {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.conditionOrder {
+    flex-grow: 1;
+}

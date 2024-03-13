@@ -1,0 +1,111 @@
+#version 430
+#extension GL_NV_gpu_shader5 : require
+#extension GL_ARB_compute_variable_group_size : require
+
+#include "shared_defines.glsl"
+#include "shared_math_library.glsl"
+
+layout(local_size_variable) in;
+
+layout(binding = 0, r32ui) uniform uimage2D src_loop_range_count_buffer;
+layout(binding = 1, r32ui) uniform readonly uimage2D dst_loop_range_count_buffer;
+
+layout(binding = 0, std430) buffer LoopRangeBufferSrc
+{
+    LoopRange src_loop_range_list[];
+};
+
+layout(binding = 1, std430) buffer LoopRangeBufferDst
+{
+    LoopRange dst_loop_range_list[];
+};
+
+uniform uint cell_size_x;
+uniform uint cell_size_y;
+
+uniform uint src_cell_buffer_size;
+uniform uint dst_cell_buffer_size;
+
+uint get_src_range_offset(ivec2 cell_coord)
+{
+    uint image_width = imageSize(src_loop_range_count_buffer).x;
+
+    return (cell_coord.y * image_width + cell_coord.x) * src_cell_buffer_size;
+}
+
+uint get_dst_range_offset(ivec2 cell_coord)
+{
+    uint image_width = imageSize(dst_loop_range_count_buffer).x;
+
+    return (cell_coord.y * image_width + cell_coord.x) * dst_cell_buffer_size;
+}
+
+void distribute(ivec2 cell_coord, ivec2 start_coord, ivec2 end_coord, uint segment_offset)
+{
+    ivec2 cell_size = ivec2(cell_size_x, cell_size_y);
+    ivec2 cell_min = cell_coord * (cell_size * 2);
+
+    ivec2 current_coord = start_coord;
+    uint current_segment_offset = segment_offset;
+
+    while(true)
+    {
+        ivec2 src_offset = (current_coord - cell_min) / cell_size;
+        ivec2 src_cell_coord = cell_coord * 2 + src_offset;
+        
+        uint src_range_count = imageLoad(src_loop_range_count_buffer, src_cell_coord).x;
+        uint src_range_offset = get_src_range_offset(src_cell_coord);
+        
+        for(uint index = 0; index < src_range_count; index++)
+        {
+            uint src_range_index = src_range_offset + index;
+            ivec2 current_start_coord = ivec2(src_loop_range_list[src_range_index].start_coord);
+        
+            if(all(equal(current_coord, current_start_coord)))
+            {
+                src_loop_range_list[src_range_index].segment_offset = current_segment_offset;
+
+                current_segment_offset += src_loop_range_list[src_range_index].segment_count;
+                current_coord = ivec2(src_loop_range_list[src_range_index].end_coord);
+
+                break;
+            }
+        }
+
+        if(all(equal(current_coord, end_coord)))
+        {
+            break; //End reached
+        }
+    }
+}
+
+void main()
+{
+    ivec2 cell_coord = ivec2(gl_GlobalInvocationID.yz);
+    ivec2 dst_image_size = imageSize(dst_loop_range_count_buffer);
+    
+    if(any(greaterThanEqual(cell_coord, dst_image_size)))
+    {
+        return;
+    }
+    
+    uint dst_range_count = imageLoad(dst_loop_range_count_buffer, cell_coord).x;
+    uint dst_range_offset = get_dst_range_offset(cell_coord);
+    
+    for(uint index = gl_LocalInvocationID.x; index < dst_range_count; index += gl_LocalGroupSizeARB.x)
+    {
+        uint dst_range_index = dst_range_offset + index;
+        uint segment_count = dst_loop_range_list[dst_range_index].segment_count;
+
+        if(segment_count == 0)
+        {
+            continue;
+        }
+
+        ivec2 start_coord = ivec2(dst_loop_range_list[dst_range_index].start_coord);
+        ivec2 end_coord = ivec2(dst_loop_range_list[dst_range_index].end_coord);
+        uint segment_offset = dst_loop_range_list[dst_range_index].segment_offset;
+        
+        distribute(cell_coord, start_coord, end_coord, segment_offset);
+    }
+}

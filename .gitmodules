@@ -1,0 +1,33 @@
+[submodule "server/extern/glfw"]
+	path = server/extern/glfw
+	url = https://github.com/glfw/glfw.git
+[submodule "server/extern/glm"]
+	path = server/extern/glm
+	url = https://github.com/g-truc/glm.git
+[submodule "server/extern/glew"]
+	path = server/extern/glew
+	url = https://github.com/Perlmint/glew-cmake.git
+[submodule "server/extern/assimp"]
+	path = server/extern/assimp
+	url = https://github.com/assimp/assimp.git
+[submodule "server/extern/volk"]
+	path = server/extern/volk
+	url = https://github.com/zeux/volk.git
+[submodule "server/extern/stb"]
+	path = server/extern/stb
+	url = https://github.com/nothings/stb.git
+[submodule "server/extern/gli"]
+	path = server/extern/gli
+	url = https://github.com/g-truc/gli.git
+[submodule "server/extern/boost"]
+	path = server/extern/boost
+	url = https://github.com/boostorg/boost.git
+[submodule "server/extern/cgal"]
+	path = server/extern/cgal
+	url = https://github.com/CGAL/cgal.git
+[submodule "server/extern/openexr"]
+	path = server/extern/openexr
+	url = https://github.com/AcademySoftwareFoundation/openexr.git
+[submodule "server/extern/Imath"]
+	path = server/extern/imath
+	url = https://github.com/AcademySoftwareFoundation/Imath.git

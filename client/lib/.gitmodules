@@ -1,0 +1,3 @@
+[submodule "interactive-3d-streaming"]
+	path = interactive-3d-streaming
+	url = https://git-ce.rwth-aachen.de/vr-vis/VR-Group/interactive-3d-streaming.git
