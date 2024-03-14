@@ -1,119 +1,62 @@
-cmake_minimum_required(VERSION 3.27)
-project(interactive-3d-streaming)
+cmake_minimum_required(VERSION 3.6)
 
-include(cmake/dependencies.cmake)
+project(shared)
 
-### protocol lib ###
-add_library(
-    i3dsprotocol
-    protocol/protocol.hpp
-    protocol/protocol.cpp
-	protocol/huffman.hpp
-	protocol/huffman.cpp
-	protocol/geometry_codec.hpp
-    protocol/geometry_codec.cpp
-)
-add_library(i3ds::protocol ALIAS i3dsprotocol)
-target_include_directories(
-    i3dsprotocol
-    PUBLIC
-        protocol
-)
-target_compile_features(
-    i3dsprotocol 
-    PUBLIC 
-        cxx_std_20
-)
+set(SOURCE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/source/)
+set(EXTERN_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/extern/)
+set(U_WEB_SOCKETS_DIRECTORY ${EXTERN_DIRECTORY}/uWebSockets)
+set(U_SOCKETS_DIRECTORY ${U_WEB_SOCKETS_DIRECTORY}/uSockets)
+set(LIBUV_DIRECTORY ${EXTERN_DIRECTORY}/libuv)
 
-### client lib ###
-add_library(
-    i3dsclient
-    client/session_client.hpp
-    client/session_client.cpp
-)
-add_library(i3ds::client ALIAS i3dsclient)
-target_include_directories(
-    i3dsclient
-    PUBLIC
-        client
-)
-target_link_libraries(i3dsclient
-    PUBLIC
-        i3ds::protocol
-        fmt::fmt
-        spdlog::spdlog
-)
-if (NOT ${CMAKE_CXX_COMPILER} MATCHES "emscripten")
-    target_link_libraries(i3dsclient
-        PUBLIC
-            ixwebsocket
-    )
-else ()
-    target_compile_definitions(i3dsclient
-        PUBLIC
-            I3DS_EMSCRIPTEN=1
-    )
-    target_link_libraries(i3dsclient
-        PUBLIC
-            websocket.js
-    )
-endif ()
+file(GLOB_RECURSE SOURCE_FILES ${SOURCE_DIRECTORY}*.cpp)
+file(GLOB_RECURSE HEADER_FILES ${SOURCE_DIRECTORY}*.hpp)
 
-if (NOT ${CMAKE_CXX_COMPILER} MATCHES "emscripten")
-    ### server lib ###
-    add_library(
-        i3dsserver
-        server/streaming_server.hpp
-        server/streaming_server.cpp
-    )
-    add_library(i3ds::server ALIAS i3dsserver)
-    target_include_directories(
-        i3dsserver
-        PUBLIC
-            server
-    )
-    target_link_libraries(i3dsserver
-        PUBLIC
-            uWebSockets
-            i3ds::protocol
-            spdlog::spdlog
-            jsoncons
-    )
+file(GLOB_RECURSE U_WEB_SOCKETS_HEADER_FILES ${U_WEB_SOCKETS_DIRECTORY}/src/*.h)
+file(GLOB_RECURSE U_SOCKETS_SOURCE_FILES ${U_SOCKETS_DIRECTORY}/src/*.c ${U_SOCKETS_DIRECTORY}/src/*.cpp)
+file(GLOB_RECURSE U_SOCKETS_HEADER_FILES ${U_SOCKETS_DIRECTORY}/src/*.h)
 
-    # ### example app ###
-    # add_executable(
-    #     i3ds-example
-    #     example/example.cpp
-    # )
+add_subdirectory(${LIBUV_DIRECTORY})
 
-    # target_link_libraries(
-    #     i3ds-example
-    #     PRIVATE
-    #         i3ds::server
-    #         i3ds::client
-    # )
+################################################################
+# uWebSockets
 
-    # ### example sever app ###
-    # add_executable(
-    #     i3ds-example-server
-    #     example/example_server.cpp
-    # )
+add_library(uWebSockets ${U_WEB_SOCKETS_HEADER_FILES} ${U_SOCKETS_SOURCE_FILES} ${U_SOCKETS_HEADER_FILES})
 
-    # target_link_libraries(
-    #     i3ds-example-server
-    #     PRIVATE
-    #         i3ds::server
-    # )
+target_compile_definitions(uWebSockets PUBLIC LIBUS_USE_LIBUV)
+target_compile_definitions(uWebSockets PUBLIC LIBUS_NO_SSL)
+target_compile_definitions(uWebSockets PUBLIC UWS_NO_ZLIB)
 
-    # ### example client app ###
-    # add_executable(
-    #     i3ds-example-client
-    #     example/example_client.cpp
-    # )
+target_link_libraries(uWebSockets PUBLIC uv_a)
+target_include_directories(uWebSockets PUBLIC ${U_WEB_SOCKETS_DIRECTORY}/src)
+target_include_directories(uWebSockets PUBLIC ${U_SOCKETS_DIRECTORY}/src)
 
-    # target_link_libraries(
-    #     i3ds-example-client
-    #     PRIVATE
-    #         i3ds::client
-    # )
-endif ()
+################################################################
+# Client
+
+set(CLIENT_SOURCE_FILES ${SOURCE_FILES})
+set(CLIENT_SOURCE_HEADER ${HEADER_FILES})
+list(REMOVE_ITEM CLIENT_SOURCE_FILES ${SOURCE_DIRECTORY}stream_server.cpp)
+list(REMOVE_ITEM CLIENT_SOURCE_HEADER ${SOURCE_DIRECTORY}stream_server.hpp)
+
+add_library(stream_client ${CLIENT_SOURCE_FILES} ${CLIENT_SOURCE_HEADER})
+
+target_compile_features(stream_client PUBLIC cxx_std_20)
+target_compile_definitions(stream_client PUBLIC I3DS_EMSCRIPTEN = 1)
+
+target_link_libraries(stream_client PUBLIC websocket.js)
+target_include_directories(stream_client PUBLIC ${SOURCE_DIRECTORY})
+
+################################################################
+# Server
+
+set(SERVER_SOURCE_FILES ${SOURCE_FILES})
+set(SERVER_SOURCE_HEADER ${HEADER_FILES})
+list(REMOVE_ITEM SERVER_SOURCE_FILES ${SOURCE_DIRECTORY}stream_client.cpp)
+list(REMOVE_ITEM SERVER_SOURCE_HEADER ${SOURCE_DIRECTORY}stream_client.hpp)
+
+add_library(stream_server ${SERVER_SOURCE_FILES} ${SERVER_SOURCE_HEADER})
+
+target_compile_features(stream_server PUBLIC cxx_std_20)
+
+target_link_libraries(stream_server PUBLIC uWebSockets)
+target_include_directories(stream_server PUBLIC ${SOURCE_DIRECTORY})

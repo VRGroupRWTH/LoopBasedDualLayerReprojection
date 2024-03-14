@@ -31,3 +31,9 @@
 [submodule "server/extern/imath"]
 	path = server/extern/imath
 	url = https://github.com/AcademySoftwareFoundation/Imath.git
+[submodule "shared/extern/uWebSockets"]
+	path = shared/extern/uWebSockets
+	url = https://github.com/uNetworking/uWebSockets.git
+[submodule "shared/extern/libuv"]
+	path = shared/extern/libuv
+	url = https://github.com/libuv/libuv.git
