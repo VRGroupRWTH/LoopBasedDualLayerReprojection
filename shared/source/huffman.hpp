@@ -6,7 +6,7 @@
 #include <memory>
 #include <cstdint>
 
-namespace i3ds
+namespace shared
 {
     struct HuffmanNode
     {

@@ -1,315 +1,119 @@
 #pragma once
 
-#include <array>
-#include <cassert>
-#include <cmath>
-#include <cstdint>
-#include <cstring>
-#include <span>
-#include <vector>
+#include "types.hpp"
 
-namespace i3ds {
-const float pi = 3.14159265358f;
-enum class MessageType : uint32_t {
-    INITIALIZE_SESSION = 0,
-    SET_VIDEO_COMPRESSION_SETTINGS = 1,
-    SET_MESH_GENERATION_SETTINGS = 2,
-    REQUEST_MESH = 3,
-    UPDATE_MESH_LAYER = 4,
-    LOG_INIT = 5,
-    LOG_WRITE = 6,
-    SERVER_ACTION = 7,
-    LOG = 8,
-};
+namespace shared
+{
+    // In addition to the websocket stream described by the following packets, the server also provides several functions based on HTTP Gets and Posts
+    // [GET]  /scene                      -> Requests the avaliable scenes that the server could load.
+    // [GET]  /motion_capture             -> Requests the avaliable motion capture that could be requested by the client.
+    // [GET]  /motion_capture?id=<number> -> Requests the id-th motion capture in the list returned by "/motion_capture". 
+    //                                       Server will respond with a json file that contains triplets of time, source perspective and destination perspective.
+    // [POST] /motion_capture             -> Server will store the given motion capture.
+    // [POST] /log                        -> Server will store the given table row in the specified file.
+    // [POST] /image                      -> Server will store the given uncompressed RGBA8 image file.
 
-using Index = uint32_t;
-
-struct Vertex {
-    uint16_t x;
-    uint16_t y;
-    float z;  // [0, 1]
-};
-
-enum class VideoCodec : uint32_t {
-    H264 = 0,
-    H265 = 1,
-    AV1 = 2,
-};
-
-enum class MeshGenerationMethod : uint32_t { LINE_BASED = 0, LOOP_BASED = 1 };
-
-using Matrix = std::array<float, 16>;
-
-struct SessionInitialization {
-    uint32_t resolution_width;
-    uint32_t resolution_height;
-    MeshGenerationMethod mesh_generation_method;
-    VideoCodec video_codec;
-    std::uint8_t video_use_chroma_subsampling = true;
-    std::uint8_t layer_count = 2;
-    Matrix projection_matrix;
-
-    char scene_filename[1024];
-    float scene_scale = 1.0f;
-    float scene_exposure = 1.0f;
-    float scene_indirect_intensity = 1.0f;
-
-    char sky_filename[1024];
-    float sky_intensity = 1.0f;
-};
-
-struct MeshRequest {
-    uint32_t id;
-    std::array<Matrix, 6> view_matrices;
-};
-
-enum class VideoCompressionMode : uint32_t {
-    CONSTANT_BITRATE = 0,
-    CONSTANT_QUALITY = 1,
-};
-
-struct VideoCompressionSettings {
-    VideoCompressionMode mode = VideoCompressionMode::CONSTANT_QUALITY;
-    float bitrate = 1.0;
-    float quality = 0.5;
-    uint32_t framerate = 10;
-};
-
-// Settings controlling the gneration of the layers
-struct LayerSettings {
-    float depth_base_threshold;
-    float depth_slope_threshold;
-    std::uint8_t use_object_ids;
-
-    static LayerSettings defaults() {
-        return {
-            .depth_base_threshold = 0.5f,
-            .depth_slope_threshold = 0.5f,
-            .use_object_ids = 1,
-        };
-    }
-};
-
-// Settings controlling the line based meshing algorithm
-struct LineBasedSettings {
-    float laplace_threshold;
-    float normal_scale;
-    uint32_t line_length_min;
-
-    static LineBasedSettings defaults() {
-        return {
-            .laplace_threshold = 0.005f,
-            .normal_scale = pi * 0.25f,
-            .line_length_min = 10,
-        };
-    }
-};
-
-// Settings controlling the loop based meshing algorithm
-struct LoopBasedSettings {
-    float depth_base_threshold;
-    float depth_slope_threshold;
-    float normal_threshold;
-    float triangle_scale;
-    std::uint8_t use_normals;
-    std::uint8_t use_object_ids;
-
-    static LoopBasedSettings defaults() {
-        return {
-            .depth_base_threshold = 0.005f,
-            .depth_slope_threshold = 0.005f,
-            .normal_threshold = pi * 0.25f,
-            .use_normals = true,
-            .use_object_ids = true,
-        };
-    }
-};
-
-// Settings controlling the meshing
-struct MeshSettings {
-    float depth_max;
-
-    union {
-        LineBasedSettings line_based;
-        LoopBasedSettings loop_based;
+    enum PacketType : uint32_t
+    {
+        PACKET_TYPE_SESSION_CREATE  = 0x00,
+        PACKET_TYPE_SESSION_DESTROY = 0x01,
+        PACKET_TYPE_RENDER_REQUEST  = 0x02,
+        PACKET_TYPE_MESH_SETTINGS   = 0x03,
+        PACKET_TYPE_VIDEO_SETTINGS  = 0x04,
+        PACKET_TYPE_LAYER_RESPONSE  = 0x05
     };
 
-    static MeshSettings defaults(MeshGenerationMethod method) {
-        switch (method) {
-            case MeshGenerationMethod::LINE_BASED:
-                return {
-                    .depth_max = 0.995f,
-                    .line_based = LineBasedSettings::defaults(),
-                };
+    struct SessionCreatePacket
+    {
+        PacketType type = PACKET_TYPE_SESSION_CREATE;
 
-            case MeshGenerationMethod::LOOP_BASED:
-                return {
-                    .depth_max = 0.995f,
-                    .loop_based = LoopBasedSettings::defaults(),
-                };
-        }
-    }
-};
+        MeshGeneratorType mesh_generator = MESH_GENERATOR_TYPE_LOOP;
+        VideoCodecType video_codec = VIDEO_CODEC_TYPE_H264;
+        uint8_t video_use_chroma_subsampling = true;
 
-struct MeshGenerationSettings {
-    LayerSettings layer;
-    MeshSettings mesh;
+        Matrix view_projection_matrix;
+        uint32_t view_resolution_width = 1024;
+        uint32_t view_resolution_height = 1024;
+        uint32_t view_count = 1;
+        uint32_t layer_count = 1;
+        
+        char scene_filename[SHARED_SCENE_FILE_NAME_LENGTH_MAX];
+        float scene_scale = 1.0f;
+        float scene_exposure = 1.0f;
+        float scene_indirect_intensity = 1.0f;
 
-    MeshGenerationSettings() {
-        layer.depth_base_threshold = 0.5f;
-        layer.depth_slope_threshold = 0.5f;
-        mesh.depth_max = 0.995f;
-        mesh.loop_based.depth_base_threshold = 0.005f;
-        mesh.loop_based.depth_slope_threshold = 0.005f;
-        mesh.loop_based.normal_threshold = pi * 0.25f;
-        mesh.loop_based.use_normals = true;
-        mesh.loop_based.use_object_ids = true;
-    }
-
-    static MeshGenerationSettings defaults(MeshGenerationMethod method) {
-        MeshGenerationSettings settings;
-        settings.layer = LayerSettings::defaults();
-        const auto mesh_settings = MeshSettings::defaults(method);
-        std::memcpy(&settings.mesh, &mesh_settings, sizeof(MeshSettings));
-        return settings;
-    }
-
-    static MeshGenerationSettings create_line_based(const LayerSettings& layer_settings, float depth_max, const LineBasedSettings& line_settings) {
-        MeshGenerationSettings settings;
-        settings.layer = layer_settings,
-        settings.mesh = {
-            .depth_max = depth_max,
-            .line_based = line_settings,
-        };
-        return settings;
-    }
-
-    static MeshGenerationSettings create_loop_based(const LayerSettings& layer_settings, float depth_max, const LoopBasedSettings& loop_settings) {
-        MeshGenerationSettings settings;
-        settings.layer = layer_settings,
-        settings.mesh = {
-            .depth_max = depth_max,
-            .loop_based = loop_settings,
-        };
-        return settings;
-    }
-};
-
-enum class LogInterval : std::uint32_t {
-    PER_FRAME = 0,
-    PER_LAYER_UPDATE = 1,
-    PER_SESSION = 2,
-};
-
-struct LineBasedStatistic {  // All time measurements in milliseconds
-    // Time required for the generation of the mesh on the CPU
-    float time_line_trace;
-    float time_triangulation;
-
-    // Time required for the generation of the mesh on the GPU
-    float time_edge_detection;
-    float time_quad_tree;
-};
-
-struct LoopBasedStatistic {  // All time measurements in milliseconds
-    // Time required for the generation of the mesh on the CPU
-    float time_loop_points;    // Time required for the inverse Bresenham step
-    float time_triangulation;  // Time required for the entire traiangulation process not including
-                               // the inverse Bresenham step
-    float time_loop_info;
-    float time_loop_sort;
-    float time_sweep_line;
-    float time_adjacent_two;
-    float time_adjacent_one;
-    float time_interval_update;
-    float time_inside_outside;
-    float time_contour;
-    uint32_t loop_count;
-    uint32_t segment_count;
-    uint32_t point_count;
-
-    // Time required for the generation of the mesh on the GPU
-    float time_vector;
-    float time_base;
-    float time_combine;
-    float time_distribute;
-    float time_write;
-};
-
-struct ViewStatistic {  // All time measurements in milliseconds
-    float time_layer;   // Time required for the rendering of the scene
-
-    // Method dependent measurements
-    union {
-        LineBasedStatistic line_based;
-        LoopBasedStatistic loop_based;
+        char sky_filename[SHARED_SKY_FILE_NAME_LENGTH_MAX];
+        float sky_intensity = 1.0f;
     };
-};
 
-struct LayerInfo {
-    uint32_t request_id;
-    uint32_t layer_index;
-    uint32_t geometry_size;
-    uint32_t frame_size;
-    std::array<ViewStatistic, 6> view_statistics;
-    std::array<Matrix, 6> view_matrices;
-    std::array<uint32_t, 6> vertex_counts;
-    std::array<uint32_t, 6> index_counts;
-};
+    struct SessionDestroyPacket
+    {
+        PacketType type = PACKET_TYPE_SESSION_DESTROY;
 
-enum class ServerAction : std::uint32_t {
-    NEXT_CONDITION = 0,
-    PREVIOUS_CONDITION = 1,
-};
+        // Nothing
+    };
 
-struct LayerData {
-    LayerData() = default;
+    struct RenderRequestPacket
+    {
+        PacketType type = PACKET_TYPE_RENDER_REQUEST;
 
-    // Ensure the struct is never copied by accident
-    LayerData(LayerData&&) = default;
-    LayerData& operator=(LayerData&&) = default;
+        uint32_t request_id = 0;
+        uint32_t request_exports = 0; // Bitfield defined by MeshRequestExport
 
-    LayerData(const LayerData&) = delete;
-    LayerData& operator=(const LayerData&) = delete;
+        std::array<Matrix, SHARED_VIEW_COUNT_MAX> view_matrices;
+    };
 
-    // The measurements that were taken by the server
-    std::array<ViewStatistic, 6> view_statistic;
+    struct MeshSettingsPacket
+    {
+        PacketType type = PACKET_TYPE_MESH_SETTINGS;
 
-    // The view matrices as received in the request
-    std::array<Matrix, 6> view_matrices;
+        LayerSettings layer;
+        MeshSettings mesh;
+    };
 
-    // The number of vertices that correspond to the mesh of view_matrices[i].
-    // (should sum up to vertices.size())
-    std::array<uint32_t, 6> vertex_counts;
+    struct VideoSettingsPacket
+    {
+        PacketType type = PACKET_TYPE_VIDEO_SETTINGS;
 
-    // The number of indices that correspond to the mesh of view_matrices[i].
-    // (should sum up to indices.size())
-    std::array<uint32_t, 6> index_counts;
+        VideoCodecMode mode = VIDEO_CODEC_MODE_CONSTANT_QUALITY;
+        uint32_t framerate = 10;
+        float bitrate = 1.0f;
+        float quality = 0.5f;
+    };
 
-    // Vertices and indices of all meshes should be transmitted in one buffer.
-    // First, all vertices that correnspond to the mesh of view_matrices[0], 
-    // then all the belong to view_matrices[1], etc.
-    std::vector<Vertex> vertices;
-    std::vector<Index> indices;
+    struct LayerResponsePacket
+    {
+        PacketType type = PACKET_TYPE_LAYER_RESPONSE;
 
-    // The image should have a resolution of (3*resolution_width)x(2* resolution_height) and the
-    // images for the corresponding view matrices of the request should be as follows:
-    // +---+---+---+
-    // | 0 | 1 | 2 |
-    // +---+---+---+
-    // | 3 | 4 | 5 |
-    // +---+---+---+
-    std::vector<uint8_t> image;
-};
+        uint32_t request_id = 0;
+        uint32_t layer_index = 0;
 
-template <typename T>
-bool get_message_payload(std::span<const uint8_t> payload, T* destination) {
-    if (payload.size() != sizeof(T)) {
-        return false;
-    } else {
-        std::memcpy(destination, payload.data(), sizeof(T));
-        return true;
-    }
+        uint32_t geometry_bytes = 0;
+        uint32_t image_bytes = 0;
+
+        std::array<ViewMetadata, SHARED_VIEW_COUNT_MAX> view_metadata; // Measurements taken by the server for each view
+        std::array<Matrix, SHARED_VIEW_COUNT_MAX> view_matrices;       // View matrices as received in the request
+        std::array<uint32_t, SHARED_VIEW_COUNT_MAX> vertex_counts;     // Number of vertices for each view
+        std::array<uint32_t, SHARED_VIEW_COUNT_MAX> index_counts;      // Number of indicies for each view
+
+        // Followed by the encoded geometry of the layer consisting of geometry_bytes
+        // Followed by the encoded image of the layer consisting of image_bytes
+
+        // The package combines the geometry of all view into a single vertex array and index array.
+        // The vertices and indices of all view are concatenated meaning that the vertex and index 
+        // array start with the geometry of the first view and end with the geometry of the last view.
+        // The sum of vertex_counts is equal to the length of the vertex array encoded in this packet.array
+        // The sum of index_counts is equal to the length of the index array encoded in this packet.array
+
+        // The package only contains a single encoded image that combines the images of all views.
+        // The resolution of this combined image is (n * view_resolution_with) x (m * view_resolution_height), 
+        // where n = view_count if view_count < 3 else n = 3
+        // where m = 1 if view_count < 3 else m = 2.
+        // The location of each view within the combined image is as follows:
+        // +---+---+---+
+        // | 0 | 1 | 2 |
+        // +---+---+---+
+        // | 3 | 4 | 5 |
+        // +---+---+---+
+    };
 }
-
-}  // namespace i3ds

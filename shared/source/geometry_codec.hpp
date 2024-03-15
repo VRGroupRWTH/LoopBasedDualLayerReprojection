@@ -6,7 +6,7 @@
 #include <array>
 #include "protocol.hpp"
 
-namespace i3ds
+namespace shared
 {
     struct GeometryHeader
     {
