@@ -102,13 +102,13 @@ namespace shared
         // The package combines the geometry of all view into a single vertex array and index array.
         // The vertices and indices of all view are concatenated meaning that the vertex and index 
         // array start with the geometry of the first view and end with the geometry of the last view.
-        // The sum of vertex_counts is equal to the length of the vertex array encoded in this packet.array
-        // The sum of index_counts is equal to the length of the index array encoded in this packet.array
+        // The sum of vertex_counts is equal to the length of the vertex array encoded in this packet.
+        // The sum of index_counts is equal to the length of the index array encoded in this packet.
 
         // The package only contains a single encoded image that combines the images of all views.
         // The resolution of this combined image is (n * view_resolution_with) x (m * view_resolution_height), 
-        // where n = view_count if view_count < 3 else n = 3
-        // where m = 1 if view_count < 3 else m = 2.
+        // where n = view_count if view_count <= 3 else n = 3
+        // where m = 1 if view_count <= 3 else m = 2.
         // The location of each view within the combined image is as follows:
         // +---+---+---+
         // | 0 | 1 | 2 |

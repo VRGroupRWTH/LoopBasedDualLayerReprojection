@@ -1,6 +1,9 @@
 #include "server.hpp"
 
-Server::Server()
+#include <spdlog/spdlog.h>
+#include <App.h>
+
+Server::Server(std::string scene_directory, std::string capture_directory)
 {
 
 }
@@ -22,28 +25,262 @@ void Server::destroy()
 
 void Server::set_on_session_create(OnSessionCreate callback)
 {
+    std::unique_lock<std::mutex>(this->mutex);
 
+    this->on_session_create = callback;
 }
 
 void Server::set_on_session_destroy(OnSessionDestroy callback)
 {
+    std::unique_lock<std::mutex>(this->mutex);
 
+    this->on_session_destroy = callback;
 }
 
 void Server::set_on_render_request(OnRenderRequest callback)
 {
+    std::unique_lock<std::mutex>(this->mutex);
 
+    this->on_render_request = callback;
 }
 
 void Server::set_on_mesh_settings_change(OnMeshSettingsChange callback)
 {
+    std::unique_lock<std::mutex>(this->mutex);
 
+    this->on_mesh_settings_change = callback;
 }
 
 void Server::set_on_video_settings_change(OnVideoSettingsChange callback)
 {
+    std::unique_lock<std::mutex>(this->mutex);
+
+    this->on_video_settings_change = callback;
+}
+
+void Server::worker(uint32_t port)
+{
+    uWS::App::WebSocketBehavior<uint8_t> behaviour;
+    behaviour.maxBackpressure = 100 * 1024 * 1024;
+    behaviour.upgrade = std::bind_front(&Server::process_upgrade);
+    behaviour.open = std::bind_front(&Server::process_open);
+    behaviour.message = std::bind_front(&Server::process_message);
+    behaviour.close = std::bind_front(&Server::process_close);
+
+    uWS::App()
+        .get("/scene", std::bind_front(&Server::process_get_scene, this))
+        .get("/motion_capture", std::bind_front(&Server::process_get_motion_capture, this))
+        .post("/motion_capture", std::bind_front(&Server::process_post_motion_capture, this))
+        .post("/log", std::bind_front(&Server::process_post_log, this))
+        .post("/image", std::bind_front(&Server::process_post_image, this))
+        .ws("/*", std::move(behaviour))
+        .listen(port, std::bind_front(&Server::process_listen, this))
+        .run();
+}
+
+void Server::process_listen(ListenSocket* socket)
+{
+    spdlog::info("Server: Listening for connections");
+
+    this->listen_socket = socket;
+}
+
+void Server::process_upgrade(HttpResponse* response, HttpRequest* request, SocketContext* context)
+{
+    if (this->web_socket != nullptr)
+    {
+        spdlog::error("Server: Already connected!");
+
+        return;
+    }
+
+    std::string_view websocket_key = request->getHeader("sec-websocket-key");
+    std::string_view websocket_protocol = request->getHeader("sec-websocket-protocol");
+    std::string_view websocket_extensions = request->getHeader("sec-websocket-extensions");
+
+    response->upgrade<uint8_t>(0, websocket_key, websocket_protocol, websocket_extensions, context);
+}
+
+void Server::process_open(WebSocket* socket)
+{
+    if (this->web_socket != nullptr)
+    {
+        spdlog::error("Server: Already connected!");
+
+        return;
+    }
+
+    this->web_socket = socket;
+}
+
+void Server::process_message(WebSocket* socket, std::string_view message, uWS::OpCode opcode)
+{
+    if (opcode != uWS::BINARY)
+    {
+        spdlog::error("Server: Invalid message type!");
+
+        return;
+    }
+
+    if (message.size() < sizeof(shared::PacketType))
+    {
+        spdlog::error("Server: Invalid message size!");
+
+        return;
+    }
+
+    shared::PacketType type = *(shared::PacketType*)message.data();
+
+    switch (type)
+    {
+    case shared::PACKET_TYPE_SESSION_CREATE:
+        if (!Server::parse_packet(message, this->on_session_create))
+        {
+
+        }
+
+        if (message.size() != sizeof(shared::SessionCreatePacket))
+        {
+            spdlog::error("Server: Invalid packet size for session create!");
+        }
+
+        else if(!this->on_session_create)
+        {
+            spdlog::warn("Server: No callback set for session create!");
+        }
+
+        else
+        {
+            this->on_session_create(*(shared::SessionCreatePacket*)message.data());
+        }
+        break;
+    case shared::PACKET_TYPE_SESSION_DESTROY:
+        if (message.size() != sizeof(shared::SessionDestroyPacket))
+        {
+            spdlog::error("Server: Invalid packet size for session destroy!");
+        }
+
+        else if (!this->on_session_destroy)
+        {
+            spdlog::warn("Server: No callback set for session destroy!");
+        }
+
+        else
+        {
+            this->on_session_destroy(*(shared::SessionDestroyPacket*)message.data());
+        }
+        break;
+    case shared::PACKET_TYPE_RENDER_REQUEST:
+        if (message.size() != sizeof(shared::RenderRequestPacket))
+        {
+            spdlog::error("Server: Invalid packet size for render request!");
+        }
+
+        else if (!this->on_render_request)
+        {
+            spdlog::warn("Server: No callback set for render request!");
+        }
+
+        else
+        {
+            this->on_render_request(*(shared::RenderRequestPacket*)message.data());
+        }
+        break;
+    case shared::PACKET_TYPE_MESH_SETTINGS:
+        if (message.size() != sizeof(shared::MeshSettingsPacket))
+        {
+            spdlog::error("Server: Invalid packet size for mesh settings!");
+        }
+
+        else if (!this->on_mesh_settings_change)
+        {
+            spdlog::warn("Server: No callback set for mesh settings!");
+        }
+
+        else
+        {
+            this->on_mesh_settings_change(*(shared::MeshSettingsPacket*)message.data());
+        }
+        break;
+    case shared::PACKET_TYPE_VIDEO_SETTINGS:
+        if (message.size() != sizeof(shared::VideoSettingsPacket))
+        {
+            spdlog::error("Server: Invalid packet size for video settings!");
+        }
+
+        else if (!this->on_video_settings_change)
+        {
+            spdlog::warn("Server: No callback set for video settings!");
+        }
+
+        else
+        {
+            this->on_video_settings_change(*(shared::VideoSettingsPacket*)message.data());
+        }
+        break;
+    default:
+        spdlog::error("Server: Invalid packet type!");
+        break;
+    }
+}
+
+void Server::process_close(WebSocket* socket, int code, std::string_view message)
+{
 
 }
+
+void Server::process_get_scene(HttpResponse* response, HttpRequest* request)
+{
+
+}
+
+void Server::process_get_motion_capture(HttpResponse* response, HttpRequest* request)
+{
+
+}
+
+void Server::process_post_motion_capture(HttpResponse* response, HttpRequest* request)
+{
+
+}
+
+void Server::process_post_log(HttpResponse* response, HttpRequest* request)
+{
+
+}
+
+void Server::process_post_image(HttpResponse* response, HttpRequest* request)
+{
+
+}
+
+template<class PacketType>
+bool Server::parse_packet(const std::string_view& message, std::function<void(const PacketType& packet)>& callback)
+{
+    std::unique_lock<std::mutex> lock(this->mutex);
+
+    if (message.size() != sizeof(PacketType))
+    {
+        spdlog::error("Server: Invalid packet size!");
+
+        return false;
+    }
+
+    if (!callback)
+    {
+        spdlog::warn("Server: No callback set!");
+
+        return false;
+    }
+
+    callback(*(PacketType*)message.data());
+
+    return true;
+}
+
+
+
+
 
 /*#include <charconv>
 #include <cstring>

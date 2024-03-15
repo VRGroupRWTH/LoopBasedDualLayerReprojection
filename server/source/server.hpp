@@ -1,9 +1,12 @@
 #ifndef HEADER_SERVER
 #define HEADER_SERVER
 
-#include <protocol.hpp>
+#include <thread>
+#include <mutex>
 #include <functional>
-
+#include <WebSocket.h>
+#include <HttpResponse.h>
+#include <protocol.hpp>
 
 struct LayerData
 {
@@ -19,16 +22,31 @@ public:
     typedef std::function<void (const shared::MeshSettingsPacket& packet)> OnMeshSettingsChange;
     typedef std::function<void (const shared::VideoSettingsPacket& packet)> OnVideoSettingsChange;
 
-private:
+    typedef uWS::WebSocket<false, true, uint8_t> WebSocket;
+    typedef uWS::HttpResponse<false> HttpResponse;
+    typedef uWS::HttpRequest HttpRequest;
 
-    OnSessionCreate on_session_create;
-    OnSessionDestroy on_session_destroy;
-    OnRenderRequest on_render_request;
-    OnMeshSettingsChange on_mesh_settings_change;
-    OnVideoSettingsChange on_video_settings_change;
+    typedef us_listen_socket_t ListenSocket;
+    typedef us_socket_context_t SocketContext;
+
+private:
+    std::thread thread;
+    std::mutex mutex;
+
+    std::string scene_directory = "./scenes";
+    std::string capture_directory = "./captures";
+
+    WebSocket* web_socket = nullptr;       // Owned by thread
+    ListenSocket* listen_socket = nullptr; // Owned by thread
+
+    OnSessionCreate on_session_create;              // Protected by mutex
+    OnSessionDestroy on_session_destroy;            // Protected by mutex
+    OnRenderRequest on_render_request;              // Protected by mutex
+    OnMeshSettingsChange on_mesh_settings_change;   // Protected by mutex
+    OnVideoSettingsChange on_video_settings_change; // Protected by mutex
 
 public:
-    Server();
+    Server(std::string scene_directory, std::string capture_directory);
     ~Server();
 
     bool create(uint32_t port = 9000);
@@ -36,17 +54,29 @@ public:
 
     //TODO: Submit and request of layer data
 
-
     void set_on_session_create(OnSessionCreate callback);
     void set_on_session_destroy(OnSessionDestroy callback);
     void set_on_render_request(OnRenderRequest callback);
     void set_on_mesh_settings_change(OnMeshSettingsChange callback);
     void set_on_video_settings_change(OnVideoSettingsChange callback);
 
+private:
+    void worker(uint32_t port);
 
+    void process_listen(ListenSocket* socket);
+    void process_upgrade(HttpResponse* response, HttpRequest* request, SocketContext* context);
+    void process_open(WebSocket* socket);
+    void process_message(WebSocket* socket, std::string_view message, uWS::OpCode opcode);
+    void process_close(WebSocket* socket, int code, std::string_view message);
 
+    void process_get_scene(HttpResponse* response, HttpRequest* request);
+    void process_get_motion_capture(HttpResponse* response, HttpRequest* request);
+    void process_post_motion_capture(HttpResponse* response, HttpRequest* request);
+    void process_post_log(HttpResponse* response, HttpRequest* request);
+    void process_post_image(HttpResponse* response, HttpRequest* request);
 
-
+    template<class PacketType>
+    static bool parse_packet(const std::string_view& message, std::function<void(const PacketType& packet)>& callback);
 };
 
 
