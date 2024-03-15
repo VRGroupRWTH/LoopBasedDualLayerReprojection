@@ -88,3 +88,20 @@ add_dependencies(ar-streaming-lib copy-type-definitions)
 #             webxr
 #     )
 # endif ()
+
+
+
+
+
+set(CLIENT_SOURCE_FILES ${SOURCE_FILES})
+set(CLIENT_SOURCE_HEADER ${HEADER_FILES})
+list(REMOVE_ITEM CLIENT_SOURCE_FILES ${SOURCE_DIRECTORY}stream_server.cpp)
+list(REMOVE_ITEM CLIENT_SOURCE_HEADER ${SOURCE_DIRECTORY}stream_server.hpp)
+
+add_library(stream_client ${CLIENT_SOURCE_FILES} ${CLIENT_SOURCE_HEADER})
+
+target_compile_features(stream_client PUBLIC cxx_std_20)
+target_compile_definitions(stream_client PUBLIC I3DS_EMSCRIPTEN = 1)
+
+target_link_libraries(stream_client PUBLIC websocket.js)
+target_include_directories(stream_client PUBLIC ${SOURCE_DIRECTORY})

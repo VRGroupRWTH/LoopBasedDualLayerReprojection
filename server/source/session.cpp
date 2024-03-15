@@ -1,6 +1,6 @@
 #include "session.hpp"
 
-bool Session::create(MeshGeneratorType mesh_generator_type, EncoderCodec codec, const glm::uvec2& resolution, uint32_t layer_count, bool chroma_subsampling, i3ds::StreamingServer* server)
+bool Session::create(Server* server, MeshGeneratorType mesh_generator_type, EncoderCodec codec, const glm::uvec2& resolution, uint32_t layer_count, bool chroma_subsampling)
 {
     if (!this->worker_pool.create(server))
     {
@@ -285,7 +285,7 @@ void Session::set_layer_use_object_ids(bool use_object_ids)
     this->layer_use_object_ids = use_object_ids;
 }
 
-void Session::set_mesh_settings(const i3ds::MeshSettings& settings)
+void Session::set_mesh_settings(const shared::MeshSettings& settings)
 {
     this->mesh_generator->apply(settings);
 }

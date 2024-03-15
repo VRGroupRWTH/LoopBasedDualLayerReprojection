@@ -1,14 +1,15 @@
 #ifndef HEADER_SESSION
 #define HEADER_SESSION
 
-#include <streaming_server.hpp>
 #include <GL/glew.h>
 #include <glm/glm.hpp>
 #include <vector>
 #include <array>
 #include <cstdint>
+#include <types.hpp>
 
 #include "mesh_generator/mesh_generator.hpp"
+#include "server.hpp"
 #include "camera.hpp"
 #include "scene.hpp"
 #include "worker.hpp"
@@ -60,7 +61,7 @@ private:
 public:
     Session() = default;
 
-    bool create(MeshGeneratorType mesh_generator_type, EncoderCodec codec, const glm::uvec2& resolution, uint32_t layer_count, bool chroma_subsampling, i3ds::StreamingServer* server);
+    bool create(Server* server, MeshGeneratorType mesh_generator_type, EncoderCodec codec, const glm::uvec2& resolution, uint32_t layer_count, bool chroma_subsampling);
     void destroy();
 
     bool render_frame(const Camera& camera, const Scene& scene, uint32_t request_id);
@@ -70,7 +71,7 @@ public:
     void set_layer_depth_slope_threshold(float depth_slope_threshold);
     void set_layer_use_object_ids(bool use_object_ids);
 
-    void set_mesh_settings(const i3ds::MeshSettings& settings);
+    void set_mesh_settings(const shared::MeshSettings& settings);
 
     void set_encoder_mode(EncoderMode mode);
     void set_encoder_frame_rate(uint32_t frame_rate);

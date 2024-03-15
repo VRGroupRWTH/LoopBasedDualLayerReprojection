@@ -1,9 +1,9 @@
 #ifndef HEADER_LINE_TRIANGULATION
 #define HEADER_LINE_TRIANGULATION
 
-#include <streaming_server.hpp>
 #include <glm/glm.hpp>
 #include <vector>
+#include <types.hpp>
 
 #define LINE_TRIANGULATION_BORDER_POINTS 10
 
@@ -34,7 +34,7 @@ private:
 public:
     LineTriangulation() = default;
 
-    void process(const glm::uvec2& resolution, float depth_max, uint32_t line_length_min, const float* depth_copy_pointer, LineQuadTree& quad_tree, std::vector<i3ds::Vertex>& vertices, std::vector<i3ds::Index>& indices, i3ds::ViewStatistic& statistic);
+    void process(const glm::uvec2& resolution, float depth_max, uint32_t line_length_min, const float* depth_copy_pointer, LineQuadTree& quad_tree, std::vector<shared::Vertex>& vertices, std::vector<shared::Index>& indices, shared::ViewMetadata& metadata);
 
 private:
     void compute_line_segments();

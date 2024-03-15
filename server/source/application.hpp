@@ -1,11 +1,12 @@
 #ifndef HEADER_APPLICATION
 #define HEADER_APPLICATION
 
-#include <streaming_server.hpp>
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
+#include <protocol.hpp>
 
 #include "command_parser.hpp"
+#include "server.hpp"
 #include "camera.hpp"
 #include "scene.hpp"
 #include "session.hpp"

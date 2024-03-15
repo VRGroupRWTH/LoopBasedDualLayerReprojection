@@ -1,11 +1,11 @@
 #ifndef HEADER_LOOP_TRIANGULATION
 #define HEADER_LOOP_TRIANGULATION
 
-#include <streaming_server.hpp>
 #include <glm/glm.hpp>
 #include <vector>
 #include <array>
 #include <cstdint>
+#include <types.hpp>
 
 namespace glsl
 {
@@ -95,20 +95,20 @@ public:
     LoopTriangulation() = default;
     ~LoopTriangulation();
 
-    void process(const glm::uvec2& resolution, float triangle_scale, const glsl::Loop* loop_pointer, const glsl::LoopCount* loop_count_pointer, const glsl::LoopSegment* loop_segment_pointer, std::vector<i3ds::Vertex>& vertices, std::vector<i3ds::Index>& indices, i3ds::ViewStatistic& statistic);
+    void process(const glm::uvec2& resolution, float triangle_scale, const glsl::Loop* loop_pointer, const glsl::LoopCount* loop_count_pointer, const glsl::LoopSegment* loop_segment_pointer, std::vector<shared::Vertex>& vertices, std::vector<shared::Index>& indices, shared::ViewMetadata& metadata);
 
 private:
     void compute_loop_points(uint32_t segment_count, const glsl::LoopSegment* segment_pointer, std::vector<LoopPoint>& points);
     static void compute_segment(const glm::ivec2& last_coord, const glm::ivec2& current_coord, glm::ivec2& segment_direction, uint32_t& segment_length);
 
-    void compute_triangulation(const glm::uvec2& resolution, float triangle_scale, const glsl::Loop* loop_pointer, const glsl::LoopSegment* loop_segment_pointer, std::vector<i3ds::Vertex>& vertices, std::vector<i3ds::Index>& indices, i3ds::ViewStatistic& statistic);
+    void compute_triangulation(const glm::uvec2& resolution, float triangle_scale, const glsl::Loop* loop_pointer, const glsl::LoopSegment* loop_segment_pointer, std::vector<shared::Vertex>& vertices, std::vector<shared::Index>& indices, shared::ViewMetadata& metadata);
     bool check_inside(const LoopPoint& point, const glsl::Loop* loop_pointer, const glsl::LoopSegment* loop_segment_pointer, uint32_t& interval_index);
     bool process_adjacent_two_intervals(const LoopPointHandle& point_handle, const LoopPoint& point);
     bool process_adjacent_one_interval(const LoopPointHandle& point_handle, const LoopPoint& point);
     void process_inside_interval(const LoopPointHandle& point_handle, const LoopPoint& point, uint32_t interval_index);
     void process_outside_interval(const LoopPointHandle& point_handle, const LoopPoint& point);
 
-    void triangulate_contour(const Contour* contour, std::vector<i3ds::Index>& indices);
+    void triangulate_contour(const Contour* contour, std::vector<shared::Index>& indices);
     static bool is_reflex(const LoopPoint& previous, const LoopPoint& current, const LoopPoint& next);
 
     void clear_state();
