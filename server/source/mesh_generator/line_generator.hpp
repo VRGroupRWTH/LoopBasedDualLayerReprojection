@@ -77,17 +77,17 @@ public:
 
     GLsync fence = 0;
 
-    //Time measurements in millisconds
     Timer edge_timer;
     Timer quad_tree_timer;
 
+    //Time measurements in millisconds
     double time_edge = 0.0;
     double time_quad_tree = 0.0;
 
 public:
     LineGeneratorFrame() = default;
 
-    bool triangulate(std::vector<i3ds::Vertex>& vertices, std::vector<i3ds::Index>& indices, i3ds::ViewStatistic& statistic);
+    bool triangulate(std::vector<shared::Vertex>& vertices, std::vector<shared::Index>& indices, shared::ViewMetadata& metadata, std::vector<MeshFeatureLine>& feature_lines, bool export_feature_lines);
 
     GLuint get_depth_buffer() const;
     GLuint get_normal_buffer() const;
@@ -114,7 +114,7 @@ public:
 
     bool create(const glm::uvec2& resolution);
     void destroy();
-    void apply(const i3ds::MeshSettings& settings);
+    void apply(const shared::MeshSettings& settings);
 
     MeshGeneratorFrame* create_frame();
     void destroy_frame(MeshGeneratorFrame* frame);

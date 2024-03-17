@@ -3,10 +3,10 @@
 #include <array>
 #include <cstdint>
 
-#define SHARED_VIEW_COUNT_MAX             6
-#define SHARED_SCENE_FILE_NAME_LENGTH_MAX 1024
-#define SHARED_SKY_FILE_NAME_LENGTH_MAX   1024
-#define SHARED_PI                         3.14159265358f
+#define SHARED_VIEW_COUNT_MAX    6
+#define SHARED_EXPORT_COUNT_MAX  4
+#define SHARED_STRING_LENGTH_MAX 1024
+#define SHARED_PI                3.14159265358f
 
 namespace shared
 {
@@ -29,16 +29,17 @@ namespace shared
         VIDEO_CODEC_MODE_CONSTANT_QUALITY = 0x01
     };
 
-    enum MeshRequestExport : uint32_t
+    enum ExportTypes : uint32_t
     {
-        MESH_REQUEST_EXPORT_MESH          = 0x01,
-        MESH_REQUEST_EXPORT_FEATURE_LINES = 0x02,
-        MESH_REQUEST_EXPORT_COLOR         = 0x04,
-        MESH_REQUEST_EXPORT_DEPTH         = 0x08
+        EXPORT_TYPE_COLOR         = 0x01,
+        EXPORT_TYPE_DEPTH         = 0x02,
+        EXPORT_TYPE_MESH          = 0x03,
+        EXPORT_TYPE_FEATURE_LINES = 0x04
     };
 
     typedef uint32_t Index;
     typedef std::array<float, 16> Matrix;
+    typedef std::array<char, SHARED_STRING_LENGTH_MAX> String;
 
     struct Vertex
     {

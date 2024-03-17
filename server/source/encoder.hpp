@@ -12,6 +12,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <vector>
+#include <chrono>
 
 #if defined(_WIN32)
 typedef PFN_vkGetMemoryWin32HandleKHR vkGetMemoryWin32HandleKHRType;
@@ -89,6 +90,10 @@ struct EncoderFrame
     uint8_t* output_buffer = nullptr;
     uint32_t output_buffer_size = 0;
 
+    std::chrono::high_resolution_clock::time_point encode_start;
+    std::chrono::high_resolution_clock::time_point encode_end;
+    double time_encode = 0.0;
+
     bool config_changed = false;
 };
 
@@ -103,6 +108,8 @@ struct EncoderWorkerOutput
 
     uint8_t* output_buffer = nullptr;
     uint32_t output_buffer_size = 0;
+
+    std::chrono::high_resolution_clock::time_point encode_end;
 };
 
 class EncoderWorker

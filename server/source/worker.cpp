@@ -1,14 +1,21 @@
 #include "worker.hpp"
 #include "session.hpp"
 #include "encoder.hpp"
+#include "export.hpp"
 #include "mesh_generator/mesh_generator.hpp"
 
-bool WorkerPool::create(i3ds::StreamingServer* server)
+#include <geometry_codec.hpp>
+#include <filesystem>
+#include <chrono>
+
+bool WorkerPool::create(Server* server, uint32_t view_count, bool export_enabled)
 {
     this->server = server;
     this->state = WORKER_STATE_ACTIVE;
+    this->view_count = view_count;
+    this->export_enabled = export_enabled;
 
-    for (uint32_t view = 0; view < CAMERA_VIEW_COUNT; view++)
+    for (uint32_t view = 0; view < view_count; view++)
     {
         std::thread mesh_thread = std::thread([this, view]()
         {
@@ -64,7 +71,7 @@ void WorkerPool::submit(Frame* frame)
 
     WorkerFrame* worker_frame = new WorkerFrame;
     worker_frame->frame = frame;
-    worker_frame->layer_data = std::move(this->server->allocate_layer_data());
+    worker_frame->layer_data = this->server->allocate_layer_data();
     worker_frame->complete.fill(false);
 
     this->input_queue.push_back(worker_frame);
@@ -87,6 +94,8 @@ void WorkerPool::reclaim(std::vector<Frame*>& frames)
 
 void WorkerPool::worker_mesh(uint32_t view)
 {
+    std::vector<MeshFeatureLine> feature_lines;
+
     while (true)
     {
         std::unique_lock<std::mutex> input_lock(this->input_mutex);
@@ -119,17 +128,55 @@ void WorkerPool::worker_mesh(uint32_t view)
         input_lock.unlock();
 
         const Frame* frame = worker_frame->frame;
+        const ExportRequest& export_request = frame->export_request;
         MeshGeneratorFrame* mesh_generator_frame = frame->mesh_generator_frame[view];
-        i3ds::LayerData& layer_data = worker_frame->layer_data;
+        LayerData* layer_data = worker_frame->layer_data;
 
-        mesh_generator_frame->triangulate(worker_frame->vertices[view], worker_frame->indices[view], layer_data.view_statistic[view]);
+        mesh_generator_frame->triangulate(layer_data->vertices[view], layer_data->indices[view], layer_data->view_metadata[view], feature_lines, this->export_enabled);
 
-        layer_data.vertex_counts[view] = worker_frame->vertices[view].size();
-        layer_data.index_counts[view] = worker_frame->indices[view].size();
-        layer_data.view_statistic[view].time_layer = frame->time_layer[view];
-
-        memcpy(layer_data.view_matrices[view].data(), glm::value_ptr(frame->view_matrix[view]), sizeof(glm::mat4));
+        layer_data->view_metadata[view].time_layer = frame->time_layer[view];
+        layer_data->view_metadata[view].time_image_encode = frame->encoder_frame->time_encode;
+        memcpy(layer_data->view_matrices[view].data(), glm::value_ptr(frame->view_matrix[view]), sizeof(glm::mat4));
         
+        if (this->export_enabled)
+        {
+            if (export_request.color_file_name.has_value())
+            {
+                std::string file_name = this->get_export_file_name(export_request.color_file_name.value(), view);
+
+                glm::uvec2 image_resolution = frame->resolution;
+                uint32_t image_size = image_resolution.x * image_resolution.y * sizeof(glm::u8vec3);
+
+                export_color_image(file_name, image_resolution, frame->color_export_pointers[view], image_size);
+            }
+
+            if (export_request.depth_file_name.has_value())
+            {
+                std::string file_name = this->get_export_file_name(export_request.depth_file_name.value(), view);
+
+                glm::uvec2 image_resolution = frame->resolution;
+                uint32_t image_size = image_resolution.x * image_resolution.y * sizeof(float);
+
+                export_depth_image(file_name, image_resolution, frame->depth_export_pointers[view], image_size);
+            }
+
+            if (export_request.mesh_file_name.has_value())
+            {
+                std::string file_name = this->get_export_file_name(export_request.mesh_file_name.value(), view);
+
+                export_mesh(file_name, layer_data->vertices[view], layer_data->indices[view], frame->view_matrix[view], frame->projection_matrix);
+            }
+
+            if (export_request.feature_lines_file_name.has_value())
+            {
+                std::string file_name = this->get_export_file_name(export_request.feature_lines_file_name.value(), view);
+
+                export_feature_lines(file_name, feature_lines);
+            }
+
+            feature_lines.clear();
+        }
+
         input_lock.lock();
         worker_frame->complete[view] = true;
         this->mesh_condition.notify_all();
@@ -139,6 +186,9 @@ void WorkerPool::worker_mesh(uint32_t view)
 
 void WorkerPool::worker_submit()
 {
+    std::vector<shared::Vertex> vertices;
+    std::vector<shared::Index> indices;
+
     while (true)
     {
         std::unique_lock<std::mutex> input_lock(this->input_mutex);
@@ -149,7 +199,7 @@ void WorkerPool::worker_submit()
                 WorkerFrame* worker_frame = this->input_queue.front();
                 bool complete = true;
 
-                for (uint32_t view = 0; view < CAMERA_VIEW_COUNT; view++)
+                for (uint32_t view = 0; view < this->view_count; view++)
                 {
                     complete = complete && worker_frame->complete[view];
                 }
@@ -167,38 +217,64 @@ void WorkerPool::worker_submit()
 
             this->mesh_condition.wait(input_lock);
         }
+
         WorkerFrame* worker_frame = this->input_queue.front();
         this->input_queue.erase(this->input_queue.begin());
         input_lock.unlock();
 
-        i3ds::LayerData& layer_data = worker_frame->layer_data;
-
-        for (uint32_t view = 0; view < CAMERA_VIEW_COUNT; view++)
-        {
-            layer_data.vertices.insert(layer_data.vertices.end(), worker_frame->vertices[view].begin(), worker_frame->vertices[view].end());
-            layer_data.indices.insert(layer_data.indices.end(), worker_frame->indices[view].begin(), worker_frame->indices[view].end());
-        }
-
         const Frame* frame = worker_frame->frame;
         const EncoderFrame* encoder_frame = frame->encoder_frame;
+        LayerData* layer_data = worker_frame->layer_data;
 
-        uint32_t encoder_buffer_size = encoder_frame->output_buffer_size + encoder_frame->output_parameter_buffer.size();
-        uint32_t encoder_buffer_offset = 0;
+        vertices.clear();
+        indices.clear();
+        layer_data->geometry.clear();
 
-        layer_data.image.resize(encoder_buffer_size);
+        for (uint32_t view = 0; view < this->view_count; view++)
+        {
+            vertices.insert(vertices.end(), layer_data->vertices[view].begin(), layer_data->vertices[view].end());
+            indices.insert(indices.end(), layer_data->indices[view].begin(), layer_data->indices[view].end());
+        }
+
+        std::chrono::high_resolution_clock::time_point geometry_encode_start = std::chrono::high_resolution_clock::now();
+        shared::GeometryCodec::encode(indices, vertices, layer_data->geometry);
+        std::chrono::high_resolution_clock::time_point geometry_encode_end = std::chrono::high_resolution_clock::now();
+        double time_geometry_encode = std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(geometry_encode_end - geometry_encode_start).count();
+
+        uint32_t image_buffer_size = encoder_frame->output_buffer_size + encoder_frame->output_parameter_buffer.size();
+        uint32_t image_buffer_offset = 0;
+
+        layer_data->image.resize(image_buffer_size);
 
         if (encoder_frame->config_changed)
         {
-            memcpy(layer_data.image.data(), encoder_frame->output_parameter_buffer.data(), encoder_frame->output_parameter_buffer.size());
-            encoder_buffer_offset += encoder_frame->output_parameter_buffer.size();
+            memcpy(layer_data->image.data(), encoder_frame->output_parameter_buffer.data(), encoder_frame->output_parameter_buffer.size());
+            image_buffer_offset += encoder_frame->output_parameter_buffer.size();
         }
 
-        memcpy(layer_data.image.data() + encoder_buffer_offset, encoder_frame->output_buffer, encoder_frame->output_buffer_size);
+        memcpy(layer_data->image.data() + image_buffer_offset, encoder_frame->output_buffer, encoder_frame->output_buffer_size);
 
-        this->server->submit_mesh_layer(frame->request_id, frame->layer_index, std::move(layer_data));
+        layer_data->request_id = frame->request_id;
+        layer_data->layer_index = frame->layer_index;
+
+        for (uint32_t view = 0; view < this->view_count; view++)
+        {
+            layer_data->view_metadata[view].time_geometry_encode = time_geometry_encode;
+        }
+
+        this->server->submit_layer_data(layer_data);
+        worker_frame->layer_data = nullptr;
 
         std::unique_lock<std::mutex> output_lock(this->output_mutex);
         this->output_queue.push_back(worker_frame);
         output_lock.unlock();
     }
+}
+
+std::string WorkerPool::get_export_file_name(const std::string& request_file_name, uint32_t view)
+{
+    std::filesystem::path file_name = std::filesystem::path(this->server->get_study_directory()) / request_file_name;
+    file_name.replace_filename(file_name.filename().string() + "_view_" + std::to_string(view));
+
+    return file_name.string();
 }

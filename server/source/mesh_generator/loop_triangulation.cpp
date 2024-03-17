@@ -1,8 +1,9 @@
 #include "loop_triangulation.hpp"
 
+#include <glm/gtc/constants.hpp>
+#include <spdlog/spdlog.h>
 #include <algorithm>
 #include <chrono>
-#include <glm/gtc/constants.hpp>
 
 LoopTriangulation::~LoopTriangulation()
 {
@@ -20,7 +21,7 @@ LoopTriangulation::~LoopTriangulation()
     this->contour_cache.clear();
 }
 
-void LoopTriangulation::process(const glm::uvec2& resolution, float triangle_scale, const glsl::Loop* loop_pointer, const glsl::LoopCount* loop_count_pointer, const glsl::LoopSegment* loop_segment_pointer, std::vector<i3ds::Vertex>& vertices, std::vector<i3ds::Index>& indices, i3ds::ViewStatistic& statistic)
+void LoopTriangulation::process(const glm::uvec2& resolution, float triangle_scale, const glsl::Loop* loop_pointer, const glsl::LoopCount* loop_count_pointer, const glsl::LoopSegment* loop_segment_pointer, std::vector<shared::Vertex>& vertices, std::vector<shared::Index>& indices, shared::ViewMetadata& metadata, std::vector<MeshFeatureLine>& feature_lines, bool export_feature_lines)
 {
     this->clear_state();
 
@@ -32,7 +33,7 @@ void LoopTriangulation::process(const glm::uvec2& resolution, float triangle_sca
         vertices.clear();
         indices.clear();
 
-        std::cout << "Loop count exceeds buffer limit!" << std::endl;
+        spdlog::error("LoopTriangulation: Loop count exceeds buffer limit!");
 
         return;
     }
@@ -42,13 +43,13 @@ void LoopTriangulation::process(const glm::uvec2& resolution, float triangle_sca
         vertices.clear();
         indices.clear();
 
-        std::cout << "Loop segement count exceeds buffer limit!" << std::endl;
+        spdlog::error("LoopTriangulation: Loop segement count exceeds buffer limit!");
 
         return;
     }
 
-    statistic.loop_based.loop_count = loop_count;
-    statistic.loop_based.segment_count = segment_count;
+    metadata.loop.loop_count = loop_count;
+    metadata.loop.segment_count = segment_count;
 
     for (uint32_t loop_index = 0; loop_index < loop_count; loop_index++)
     {
@@ -61,17 +62,40 @@ void LoopTriangulation::process(const glm::uvec2& resolution, float triangle_sca
         std::chrono::high_resolution_clock::time_point loop_segments_start = std::chrono::high_resolution_clock::now();
         this->compute_loop_points(segment_count, segment_pointer, points);
         std::chrono::high_resolution_clock::time_point loop_segments_end = std::chrono::high_resolution_clock::now();
-        statistic.loop_based.time_loop_points += std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(loop_segments_end - loop_segments_start).count();
+        metadata.loop.time_loop_points += std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(loop_segments_end - loop_segments_start).count();
 
-        statistic.loop_based.point_count += points.size();
+        metadata.loop.point_count += points.size();
 
         this->loop_points.push_back(std::move(points));
     }
 
+    if (export_feature_lines)
+    {
+        feature_lines.clear();
+        
+        for (uint32_t loop_index = 0; loop_index < loop_count; loop_index++)
+        {
+            const std::vector<LoopPoint>& points = this->loop_points[loop_index];
+
+            for (uint32_t point_index = 0; point_index < points.size(); point_index++)
+            {
+                const LoopPoint& line_start = points[point_index];
+                const LoopPoint& line_end = points[(point_index + 1) % points.size()];
+
+                MeshFeatureLine feature_line;
+                feature_line.start = line_start.point;
+                feature_line.end = line_end.point;
+                feature_line.id = loop_index;
+
+                feature_lines.push_back(feature_line);
+            }
+        }
+    }
+
     std::chrono::high_resolution_clock::time_point triangulation_start = std::chrono::high_resolution_clock::now();
-    this->compute_triangulation(resolution, triangle_scale, loop_pointer, loop_segment_pointer, vertices, indices, statistic);
+    this->compute_triangulation(resolution, triangle_scale, loop_pointer, loop_segment_pointer, vertices, indices, metadata);
     std::chrono::high_resolution_clock::time_point triangulation_end = std::chrono::high_resolution_clock::now();
-    statistic.loop_based.time_triangulation = std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(triangulation_end - triangulation_start).count();
+    metadata.loop.time_triangulation = std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(triangulation_end - triangulation_start).count();
 }
 
 void LoopTriangulation::compute_loop_points(uint32_t segment_count, const glsl::LoopSegment* segment_pointer, std::vector<LoopPoint>& points)
@@ -225,7 +249,7 @@ void LoopTriangulation::compute_segment(const glm::ivec2& last_coord, const glm:
     segment_length = glm::max(glm::abs(direction.x), glm::abs(direction.y));
 }
 
-void LoopTriangulation::compute_triangulation(const glm::uvec2& resolution, float triangle_scale, const glsl::Loop* loop_pointer, const glsl::LoopSegment* loop_segment_pointer, std::vector<i3ds::Vertex>& vertices, std::vector<i3ds::Index>& indices, i3ds::ViewStatistic& statistic)
+void LoopTriangulation::compute_triangulation(const glm::uvec2& resolution, float triangle_scale, const glsl::Loop* loop_pointer, const glsl::LoopSegment* loop_segment_pointer, std::vector<shared::Vertex>& vertices, std::vector<shared::Index>& indices, shared::ViewMetadata& metadata)
 {
     //Related to "Real-time Image Vectorization on GPU" by "Xiaoliang Xiong, Jie Feng and Bingfeng Zhou"
     //Related to "CMSC 754: Lecture 5 Polygon Triangulation" by "Dave Mount"
@@ -245,7 +269,7 @@ void LoopTriangulation::compute_triangulation(const glm::uvec2& resolution, floa
         }
     }
     std::chrono::high_resolution_clock::time_point loop_info_end = std::chrono::high_resolution_clock::now();
-    statistic.loop_based.time_loop_info = std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(loop_info_end - loop_info_start).count();
+    metadata.loop.time_loop_info = std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(loop_info_end - loop_info_start).count();
 
     std::chrono::high_resolution_clock::time_point loop_sort_start = std::chrono::high_resolution_clock::now();
     std::sort(this->loop_point_handles.begin(), this->loop_point_handles.end(), [&](const LoopPointHandle& point_handle1, const LoopPointHandle& point_handle2)
@@ -261,7 +285,7 @@ void LoopTriangulation::compute_triangulation(const glm::uvec2& resolution, floa
         return point1.point.y < point2.point.y;
     });
     std::chrono::high_resolution_clock::time_point loop_sort_end = std::chrono::high_resolution_clock::now();
-    statistic.loop_based.time_loop_sort = std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(loop_sort_end - loop_sort_start).count();
+    metadata.loop.time_loop_sort = std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(loop_sort_end - loop_sort_start).count();
 
     std::chrono::high_resolution_clock::time_point sweep_line_start = std::chrono::high_resolution_clock::now();
     for (const LoopPointHandle& point_handle : this->loop_point_handles)
@@ -274,7 +298,7 @@ void LoopTriangulation::compute_triangulation(const glm::uvec2& resolution, floa
             continue;
         }
         std::chrono::high_resolution_clock::time_point adjacent_two_end = std::chrono::high_resolution_clock::now();
-        statistic.loop_based.time_adjacent_two += std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(adjacent_two_end - adjacent_two_start).count();
+        metadata.loop.time_adjacent_two += std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(adjacent_two_end - adjacent_two_start).count();
 
         std::chrono::high_resolution_clock::time_point adjacent_one_start = std::chrono::high_resolution_clock::now();
         if (this->process_adjacent_one_interval(point_handle, point))
@@ -282,7 +306,7 @@ void LoopTriangulation::compute_triangulation(const glm::uvec2& resolution, floa
             continue;
         }
         std::chrono::high_resolution_clock::time_point adjacent_one_end = std::chrono::high_resolution_clock::now();
-        statistic.loop_based.time_adjacent_one += std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(adjacent_one_end - adjacent_one_start).count();
+        metadata.loop.time_adjacent_one += std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(adjacent_one_end - adjacent_one_start).count();
 
         std::chrono::high_resolution_clock::time_point interval_update_start = std::chrono::high_resolution_clock::now();
         std::chrono::high_resolution_clock::time_point interval_update_end;
@@ -295,7 +319,7 @@ void LoopTriangulation::compute_triangulation(const glm::uvec2& resolution, floa
             std::chrono::high_resolution_clock::time_point inside_outside_start = std::chrono::high_resolution_clock::now();
             this->process_inside_interval(point_handle, point, interval_index);
             std::chrono::high_resolution_clock::time_point inside_outside_end = std::chrono::high_resolution_clock::now();
-            statistic.loop_based.time_inside_outside += std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(inside_outside_end - inside_outside_start).count();
+            metadata.loop.time_inside_outside += std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(inside_outside_end - inside_outside_start).count();
         }
 
         else
@@ -305,13 +329,13 @@ void LoopTriangulation::compute_triangulation(const glm::uvec2& resolution, floa
             std::chrono::high_resolution_clock::time_point inside_outside_start = std::chrono::high_resolution_clock::now();
             this->process_outside_interval(point_handle, point);
             std::chrono::high_resolution_clock::time_point inside_outside_end = std::chrono::high_resolution_clock::now();
-            statistic.loop_based.time_inside_outside += std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(inside_outside_end - inside_outside_start).count();
+            metadata.loop.time_inside_outside += std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(inside_outside_end - inside_outside_start).count();
         }
 
-        statistic.loop_based.time_interval_update += std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(interval_update_end - interval_update_start).count();
+        metadata.loop.time_interval_update += std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(interval_update_end - interval_update_start).count();
     }
     std::chrono::high_resolution_clock::time_point sweep_line_end = std::chrono::high_resolution_clock::now();
-    statistic.loop_based.time_sweep_line = std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(sweep_line_end - sweep_line_start).count();
+    metadata.loop.time_sweep_line = std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(sweep_line_end - sweep_line_start).count();
 
     indices.clear();
     vertices.clear();
@@ -360,7 +384,7 @@ void LoopTriangulation::compute_triangulation(const glm::uvec2& resolution, floa
                 glm::vec2 position = glm::vec2((current_point.point + glm::u16vec2(1)) / glm::u16vec2(2)) + offset;
                 position = glm::clamp(position, glm::vec2(0.0f), glm::vec2(resolution));
 
-                i3ds::Vertex vertex;
+                shared::Vertex vertex;
                 vertex.x = (uint16_t)position.x;
                 vertex.y = (uint16_t)position.y;
                 vertex.z = glm::abs(current_point.depth);
@@ -378,7 +402,7 @@ void LoopTriangulation::compute_triangulation(const glm::uvec2& resolution, floa
 
             for (const LoopPoint& point : points)
             {
-                i3ds::Vertex vertex;
+                shared::Vertex vertex;
                 vertex.x = (point.point.x + 1) / 2;
                 vertex.y = (point.point.y + 1) / 2;
                 vertex.z = glm::abs(point.depth);
@@ -394,7 +418,7 @@ void LoopTriangulation::compute_triangulation(const glm::uvec2& resolution, floa
         triangulate_contour(contour, indices);
     }
     std::chrono::high_resolution_clock::time_point contour_end = std::chrono::high_resolution_clock::now();
-    statistic.loop_based.time_contour = std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(contour_end - contour_start).count();
+    metadata.loop.time_contour = std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(contour_end - contour_start).count();
 }
 
 bool LoopTriangulation::check_inside(const LoopPoint& point, const glsl::Loop* loop_pointer, const glsl::LoopSegment* loop_segment_pointer, uint32_t& interval_index)
@@ -750,7 +774,7 @@ void LoopTriangulation::process_outside_interval(const LoopPointHandle& point_ha
     this->intervals.push_back(interval);
 }
 
-void LoopTriangulation::triangulate_contour(const Contour* contour, std::vector<i3ds::Index>& indices)
+void LoopTriangulation::triangulate_contour(const Contour* contour, std::vector<shared::Index>& indices)
 {
     this->contour_points.clear();
     this->contour_reflex_chain.clear();

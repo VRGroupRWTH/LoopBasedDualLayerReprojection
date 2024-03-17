@@ -153,6 +153,8 @@ public:
 
     void render(const Shader& shader) const;
 
+    static bool is_file_supported(const std::string& extension);
+
 private:
     bool create_defaults();
     bool create_materials(const aiScene* scene, const std::string& scene_file_name);

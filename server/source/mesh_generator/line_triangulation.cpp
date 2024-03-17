@@ -18,7 +18,7 @@ typedef ConstrainedTriangulation::Edge Edge;
 typedef ConstrainedTriangulation::Vertex_handle VertexHandle;
 typedef ConstrainedTriangulation::Face_handle FaceHandle;
 
-void LineTriangulation::process(const glm::uvec2& resolution, float depth_max, uint32_t line_length_min, const float* depth_copy_pointer, LineQuadTree& quad_tree, std::vector<i3ds::Vertex>& vertices, std::vector<i3ds::Index>& indices, i3ds::ViewStatistic& statistic)
+void LineTriangulation::process(const glm::uvec2& resolution, float depth_max, uint32_t line_length_min, const float* depth_copy_pointer, LineQuadTree& quad_tree, std::vector<shared::Vertex>& vertices, std::vector<shared::Index>& indices, shared::ViewMetadata& metadata, std::vector<MeshFeatureLine>& feature_lines, bool export_feature_lines)
 {
     this->line_coords.clear();
     this->line_segments.clear();
@@ -101,10 +101,7 @@ void LineTriangulation::process(const glm::uvec2& resolution, float depth_max, u
         this->compute_line_segments();
     }
     std::chrono::high_resolution_clock::time_point line_trace_end = std::chrono::high_resolution_clock::now();
-    statistic.line_based.time_line_trace = std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(line_trace_end - line_trace_start).count();
-
-    std::chrono::high_resolution_clock::time_point triangulation_start = std::chrono::high_resolution_clock::now();
-    ConstrainedTriangulation triangulation;
+    metadata.line.time_line_trace = std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(line_trace_end - line_trace_start).count();
 
     std::vector<glm::ivec2> broder_start =
     {
@@ -121,6 +118,46 @@ void LineTriangulation::process(const glm::uvec2& resolution, float depth_max, u
         glm::ivec2(-1, 0),
         glm::ivec2(0, -1)
     };
+
+    if (export_feature_lines)
+    {
+        feature_lines.clear();
+        
+        for (uint32_t border = 0; border < 4; border++)
+        {
+            for (uint32_t index = 0; index < LINE_TRIANGULATION_BORDER_POINTS - 1; index++)
+            {
+                glm::ivec2 line_step = (glm::ivec2(resolution) / (LINE_TRIANGULATION_BORDER_POINTS - 1)) * broder_direction[border];
+                glm::ivec2 line_start = broder_start[border] + line_step * glm::ivec2(index);
+                glm::ivec2 line_end = line_start + line_end;
+
+                MeshFeatureLine feature_line;
+                feature_line.start = line_start;
+                feature_line.end = line_end;
+                feature_line.id = 0;
+
+                feature_lines.push_back(feature_line);
+            }
+        }
+
+        uint32_t line_index = 1;
+
+        for (const LineSegment& line_segment : this->line_segments)
+        {
+            MeshFeatureLine feature_line;
+            feature_line.start = line_segment.start;
+            feature_line.end = line_segment.end;
+            feature_line.id = line_index;
+
+            if (line_segment.is_end)
+            {
+                line_index++;
+            }
+        }
+    }
+
+    std::chrono::high_resolution_clock::time_point triangulation_start = std::chrono::high_resolution_clock::now();
+    ConstrainedTriangulation triangulation;
 
     VertexHandle broder_start_vertex = nullptr;
     VertexHandle border_last_vertex = nullptr;
@@ -196,7 +233,7 @@ void LineTriangulation::process(const glm::uvec2& resolution, float depth_max, u
 
         position = glm::clamp(position, glm::ivec2(0), glm::ivec2(resolution) - 1);
 
-        i3ds::Vertex vertex;
+        shared::Vertex vertex;
         vertex.x = position.x;
         vertex.y = position.y;
         vertex.z = glm::min(depth_copy_pointer[position.y * resolution.x + position.x], depth_max);
@@ -218,7 +255,7 @@ void LineTriangulation::process(const glm::uvec2& resolution, float depth_max, u
         indices.push_back(vertex3->info());
     }
     std::chrono::high_resolution_clock::time_point triangulation_end = std::chrono::high_resolution_clock::now();
-    statistic.line_based.time_triangulation = std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(triangulation_end - triangulation_start).count();
+    metadata.line.time_triangulation = std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(triangulation_end - triangulation_start).count();
 }
 
 void LineTriangulation::compute_line_segments()
@@ -313,7 +350,7 @@ void LineTriangulation::compute_line_segments()
             }
 
             LineSegment segment;
-            segment.start = last_coord;
+            segment.start = current_sequence.start_point;
             segment.end = segment_end_coord;
 
             this->line_segments.push_back(segment);

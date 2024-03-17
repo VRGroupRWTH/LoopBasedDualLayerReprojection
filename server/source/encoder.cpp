@@ -1,8 +1,8 @@
 #include "encoder.hpp"
 
+#include <spdlog/spdlog.h>
 #include <algorithm>
 #include <array>
-#include <iostream>
 #include <cstring>
 #ifdef __unix__
 #include <dlfcn.h>
@@ -79,19 +79,22 @@ void EncoderWorker::worker()
 
         if (this->context->nvenc_functions.nvEncLockBitstream(this->nvenc_session, &lock_stream) != NV_ENC_SUCCESS)
         {
-            std::cout << "Can't lock output bistream" << std::endl;
+            spdlog::error("Encoder: Can't lock output bistream");
         }
+
+        std::chrono::high_resolution_clock::time_point encode_end = std::chrono::high_resolution_clock::now();
 
         if (lock_stream.bitstreamSizeInBytes == 0)
         {
-            std::cout << "Received output buffer with zero bytes" << std::endl;
+            spdlog::error("Encoder: Received output buffer with zero bytes");
         }
 
         EncoderWorkerOutput output;
         output.nvenc_output_buffer = input.nvenc_output_buffer;
         output.output_buffer = (uint8_t*)lock_stream.bitstreamBufferPtr;
         output.output_buffer_size = lock_stream.bitstreamSizeInBytes;
-
+        output.encode_end = encode_end;
+        
         lock.lock();
         this->output_queue.push_back(output);
         lock.unlock();
@@ -850,6 +853,8 @@ bool Encoder::submit_frame(EncoderFrame* frame)
         return false;
     }
 
+    frame->encode_start = std::chrono::high_resolution_clock::now();
+
     EncoderWorkerInput input;
     input.nvenc_output_buffer = frame->nvenc_output_buffer;
 
@@ -872,6 +877,8 @@ bool Encoder::map_frame(EncoderFrame* frame)
         {
             frame->output_buffer = output.output_buffer;
             frame->output_buffer_size = output.output_buffer_size;
+            frame->encode_end = output.encode_end;
+            frame->time_encode = std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(frame->encode_start - output.encode_end).count();
 
             this->worker_output.erase(this->worker_output.begin() + index);
             complete = true;
@@ -886,7 +893,7 @@ bool Encoder::map_frame(EncoderFrame* frame)
     }
 
     frame->output_parameter_buffer.clear();
-
+    
     if (frame->config_changed)
     {
         frame->output_parameter_buffer.resize(512);
@@ -1009,7 +1016,7 @@ bool Encoder::create_session()
 
         if (!chroma_subsampling)
         {
-            std::cout << "Encoder only supports AV1 encoding with chroma subsampling!" << std::endl;
+            spdlog::error("Encoder: AV1 encoding only supported with chroma subsampling!");
 
             return false;
         }

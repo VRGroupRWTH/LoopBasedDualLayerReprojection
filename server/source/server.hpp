@@ -1,16 +1,28 @@
 #ifndef HEADER_SERVER
 #define HEADER_SERVER
 
-#include <thread>
-#include <mutex>
-#include <functional>
 #include <WebSocket.h>
 #include <HttpResponse.h>
 #include <protocol.hpp>
 
+#include <functional>
+#include <thread>
+#include <mutex>
+#include <future>
+
 struct LayerData
 {
+    uint32_t request_id = 0;
+    uint32_t layer_index = 0;
+    
+    std::array<shared::ViewMetadata, SHARED_VIEW_COUNT_MAX> view_metadata;
+    std::array<shared::Matrix, SHARED_VIEW_COUNT_MAX> view_matrices;
 
+    std::array<std::vector<shared::Vertex>, SHARED_VIEW_COUNT_MAX> vertices;
+    std::array<std::vector<shared::Index>, SHARED_VIEW_COUNT_MAX> indices;
+
+    std::vector<uint8_t> geometry;
+    std::vector<uint8_t> image;
 };
 
 class Server
@@ -30,29 +42,35 @@ public:
     typedef us_socket_context_t SocketContext;
 
 private:
+    const std::string scene_directory = "./scene";
+    const std::string study_directory = "./study";
+
     std::thread thread;
-    std::mutex mutex;
-
-    std::string scene_directory = "./scenes";
-    std::string capture_directory = "./captures";
-
+    uWS::Loop* loop = nullptr;             // Owned by main thread
     WebSocket* web_socket = nullptr;       // Owned by thread
     ListenSocket* listen_socket = nullptr; // Owned by thread
+    std::vector<uint8_t> send_buffer;      // Owned by thread
 
-    OnSessionCreate on_session_create;              // Protected by mutex
-    OnSessionDestroy on_session_destroy;            // Protected by mutex
-    OnRenderRequest on_render_request;              // Protected by mutex
-    OnMeshSettingsChange on_mesh_settings_change;   // Protected by mutex
-    OnVideoSettingsChange on_video_settings_change; // Protected by mutex
+    std::mutex callback_mutex;
+    OnSessionCreate on_session_create;              // Protected by callback_mutex
+    OnSessionDestroy on_session_destroy;            // Protected by callback_mutex
+    OnRenderRequest on_render_request;              // Protected by callback_mutex
+    OnMeshSettingsChange on_mesh_settings_change;   // Protected by callback_mutex
+    OnVideoSettingsChange on_video_settings_change; // Protected by callback_mutex
+
+    std::mutex layer_data_mutex;
+    std::vector<LayerData*> layer_data_list; // Protected by layer_data_mutex
+    std::vector<LayerData*> layer_data_pool; // Protected by layer_data_mutex
 
 public:
-    Server(std::string scene_directory, std::string capture_directory);
+    Server(std::string scene_directory, std::string study_directory);
     ~Server();
 
     bool create(uint32_t port = 9000);
     void destroy();
 
-    //TODO: Submit and request of layer data
+    LayerData* allocate_layer_data();
+    void submit_layer_data(LayerData* layer_data);
 
     void set_on_session_create(OnSessionCreate callback);
     void set_on_session_destroy(OnSessionDestroy callback);
@@ -60,80 +78,24 @@ public:
     void set_on_mesh_settings_change(OnMeshSettingsChange callback);
     void set_on_video_settings_change(OnVideoSettingsChange callback);
 
-private:
-    void worker(uint32_t port);
+    const std::string& get_scene_directory() const;
+    const std::string& get_study_directory() const;
 
-    void process_listen(ListenSocket* socket);
+private:
+    void worker(uint32_t port, std::promise<uWS::Loop*> loop_promise);
+
+    void process_listen(uint32_t port, ListenSocket* socket);
     void process_upgrade(HttpResponse* response, HttpRequest* request, SocketContext* context);
     void process_open(WebSocket* socket);
     void process_message(WebSocket* socket, std::string_view message, uWS::OpCode opcode);
     void process_close(WebSocket* socket, int code, std::string_view message);
 
-    void process_get_scene(HttpResponse* response, HttpRequest* request);
-    void process_get_motion_capture(HttpResponse* response, HttpRequest* request);
-    void process_post_motion_capture(HttpResponse* response, HttpRequest* request);
-    void process_post_log(HttpResponse* response, HttpRequest* request);
-    void process_post_image(HttpResponse* response, HttpRequest* request);
-
+    void process_get_scenes(HttpResponse* response, HttpRequest* request);
+    void process_get_files(HttpResponse* response, HttpRequest* request);
+    void process_post_files(HttpResponse* response, HttpRequest* request);
+    
     template<class PacketType>
-    static bool parse_packet(const std::string_view& message, std::function<void(const PacketType& packet)>& callback);
+    bool parse_packet(const std::string_view& message, std::function<void(const PacketType& packet)>& callback);
 };
-
-
-/*
-
-
-
-class StreamingServer {
-    using NewSessionCallback = std::function<void(const SessionInitialization& session_settings)>;
-    using CloseSessionCallback = std::function<void()>;
-    using RequestMeshCallback = std::function<void(const MeshRequest& request)>;
-    using VideoCompressionSettingsCallback =
-        std::function<void(const VideoCompressionSettings& settings)>;
-    using MeshGenerationSettingsCallback =
-        std::function<void(const MeshGenerationSettings& settings)>;
-
-   public:
-    StreamingServer();
-    ~StreamingServer();
-
-    void set_new_session_callback(NewSessionCallback cb);
-    void set_request_mesh_callback(RequestMeshCallback cb);
-    void set_video_compression_settings_callback(VideoCompressionSettingsCallback cb);
-    void set_mesh_generation_settings(MeshGenerationSettingsCallback cb);
-    void set_close_session_callback(CloseSessionCallback cb);
-
-    void start(std::uint16_t port = 9000);
-
-    LayerData allocate_layer_data();
-    void submit_mesh_layer(uint32_t request_id, uint32_t layer_index, LayerData data);
-    void send_server_action(ServerAction action);
-
-   private:
-    std::mutex callbacks_mutex;
-    NewSessionCallback new_session_callback;
-    RequestMeshCallback request_mesh_callback;
-    VideoCompressionSettingsCallback video_compression_settings_callback;
-    MeshGenerationSettingsCallback mesh_generation_settings_callback;
-    CloseSessionCallback close_session_callback;
-
-    std::vector<uint8_t> send_buffer;
-    std::vector<uint8_t> geometry_buffer;
-
-    std::ofstream logs[3];
-
-    std::mutex free_layer_data_mutex;
-    std::vector<LayerData> free_layer_data;
-
-    std::thread socket_thread;
-    uWS::Loop* loop = nullptr;
-    std::mutex session_socket_mutex;
-    using WebSocket = uWS::WebSocket<false, true, std::nullptr_t>;
-    WebSocket* session_socket = nullptr;
-    us_listen_socket_t* session_listen_socket = nullptr;
-    void run(uint16_t port);
-
-    void process_message(MessageType type, std::span<const uint8_t> payload);
-};*/
 
 #endif

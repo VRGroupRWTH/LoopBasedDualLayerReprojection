@@ -1,28 +1,28 @@
 #include "loop_generator.hpp"
 
-bool LoopGeneratorFrame::triangulate(std::vector<i3ds::Vertex>& vertices, std::vector<i3ds::Index>& indices, i3ds::ViewStatistic& statistic)
+bool LoopGeneratorFrame::triangulate(std::vector<shared::Vertex>& vertices, std::vector<shared::Index>& indices, shared::ViewMetadata& metadata, std::vector<MeshFeatureLine>& feature_lines, bool export_feature_lines)
 {
-    statistic.loop_based.time_loop_points = 0.0f;
-    statistic.loop_based.time_triangulation = 0.0f;
-    statistic.loop_based.time_loop_info = 0.0f;
-    statistic.loop_based.time_loop_sort = 0.0f;
-    statistic.loop_based.time_sweep_line = 0.0f;
-    statistic.loop_based.time_adjacent_two = 0.0f;
-    statistic.loop_based.time_adjacent_one = 0.0f;
-    statistic.loop_based.time_interval_update = 0.0f;
-    statistic.loop_based.time_inside_outside = 0.0f;
-    statistic.loop_based.time_contour = 0.0f;
-    statistic.loop_based.loop_count = 0;
-    statistic.loop_based.segment_count = 0;
-    statistic.loop_based.point_count = 0;
+    metadata.loop.time_loop_points = 0.0f;
+    metadata.loop.time_triangulation = 0.0f;
+    metadata.loop.time_loop_info = 0.0f;
+    metadata.loop.time_loop_sort = 0.0f;
+    metadata.loop.time_sweep_line = 0.0f;
+    metadata.loop.time_adjacent_two = 0.0f;
+    metadata.loop.time_adjacent_one = 0.0f;
+    metadata.loop.time_interval_update = 0.0f;
+    metadata.loop.time_inside_outside = 0.0f;
+    metadata.loop.time_contour = 0.0f;
+    metadata.loop.loop_count = 0;
+    metadata.loop.segment_count = 0;
+    metadata.loop.point_count = 0;
 
-    statistic.loop_based.time_vector = this->time_vector;
-    statistic.loop_based.time_base = this->time_base;
-    statistic.loop_based.time_combine = this->time_combine;
-    statistic.loop_based.time_distribute = this->time_distribute;
-    statistic.loop_based.time_write = this->time_write;
+    metadata.loop.time_vector = this->time_vector;
+    metadata.loop.time_base = this->time_base;
+    metadata.loop.time_combine = this->time_combine;
+    metadata.loop.time_distribute = this->time_distribute;
+    metadata.loop.time_write = this->time_write;
 
-    this->triangulation.process(this->resolution, this->triangle_scale, this->loop_pointer, this->loop_count_pointer, this->loop_segment_pointer, vertices, indices, statistic);
+    this->triangulation.process(this->resolution, this->triangle_scale, this->loop_pointer, this->loop_count_pointer, this->loop_segment_pointer, vertices, indices, metadata, feature_lines, export_feature_lines);
 
     return true;
 }
@@ -64,15 +64,15 @@ void LoopGenerator::destroy()
     this->destroy_buffers();
 }
 
-void LoopGenerator::apply(const i3ds::MeshSettings& settings)
+void LoopGenerator::apply(const shared::MeshSettings& settings)
 {
     this->depth_max = settings.depth_max;
-    this->depth_base_threshold = settings.loop_based.depth_base_threshold;
-    this->depth_slope_threshold = settings.loop_based.depth_slope_threshold;
-    this->normal_threshold = settings.loop_based.normal_threshold;
-    this->triangle_scale = settings.loop_based.triangle_scale;
-    this->use_normals = settings.loop_based.use_normals;
-    this->use_object_ids = settings.loop_based.use_object_ids;
+    this->depth_base_threshold = settings.loop.depth_base_threshold;
+    this->depth_slope_threshold = settings.loop.depth_slope_threshold;
+    this->normal_threshold = settings.loop.normal_threshold;
+    this->triangle_scale = settings.loop.triangle_scale;
+    this->use_normals = settings.loop.use_normals;
+    this->use_object_ids = settings.loop.use_object_ids;
 }
 
 MeshGeneratorFrame* LoopGenerator::create_frame()

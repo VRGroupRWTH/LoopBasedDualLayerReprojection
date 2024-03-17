@@ -91,6 +91,7 @@ file(GLOB_RECURSE HEADER_FILES ${SOURCE_DIRECTORY}*.hpp)
 add_executable(server ${SOURCE_FILES} ${HEADER_FILES})
 
 add_compile_definitions(SHADER_DIRECTORY="${SHADER_DIRECTORY}")
+add_compile_definitions(GLM_ENABLE_EXPERIMENTAL)
 
 find_package(OpenGL REQUIRED)
 
@@ -104,6 +105,7 @@ target_link_libraries(server gli)
 target_link_libraries(server OpenEXR::OpenEXR)
 target_link_libraries(server uWebSockets)
 target_link_libraries(server spdlog)
+target_link_libraries(server Boost::json)
 
 if(MSVC)
     target_link_libraries(server ${CUDART_DIRECTORY}/lib/x64/cuda.lib)

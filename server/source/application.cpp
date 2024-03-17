@@ -1,6 +1,7 @@
 #include "application.hpp"
 
 #include <glm/gtc/type_ptr.hpp>
+#include <spdlog/spdlog.h>
 
 bool Application::create(uint32_t argument_count, const char** argument_list)
 {
@@ -41,6 +42,14 @@ bool Application::create(uint32_t argument_count, const char** argument_list)
 
 void Application::destroy()
 {
+    if (this->server != nullptr)
+    {
+        this->server->destroy();
+
+        delete this->server;
+        this->server = nullptr;
+    }
+
     if (this->session != nullptr)
     {
         this->session->destroy();
@@ -72,11 +81,6 @@ bool Application::run()
         glfwPollEvents();
 
         if (!this->process_session())
-        {
-            return false;
-        }
-
-        if (!this->process_input())
         {
             return false;
         }
@@ -182,32 +186,37 @@ bool Application::create_shaders()
 
 bool Application::create_server()
 {
-    this->server.set_new_session_callback([this](const i3ds::SessionInitialization& session_settings)
+    this->server = new Server(this->command_parser.get_scene_directory(), this->command_parser.get_study_directory());
+
+    this->server->set_on_session_create([this](const shared::SessionCreatePacket& session_create)
     {
-        this->on_session_create(session_settings);
+        this->on_session_create(session_create);
     });
 
-    this->server.set_close_session_callback([this]()
+    this->server->set_on_session_destroy([this](const shared::SessionDestroyPacket& session_destroy)
     {
-        this->on_session_destroy();
+        this->on_session_destroy(session_destroy);
     });
 
-    this->server.set_request_mesh_callback([this](const i3ds::MeshRequest& mesh_request)
+    this->server->set_on_render_request([this](const shared::RenderRequestPacket& render_request)
     {
-        this->on_mesh_request(mesh_request);
+        this->on_render_request(render_request);
     });
 
-    this->server.set_mesh_generation_settings([this](const i3ds::MeshGenerationSettings& mesh_settings)
+    this->server->set_on_mesh_settings_change([this](const shared::MeshSettingsPacket& mesh_settings)
     {
         this->on_mesh_settings_change(mesh_settings);
     });
 
-    this->server.set_video_compression_settings_callback([this](const i3ds::VideoCompressionSettings& video_settings)
+    this->server->set_on_video_settings_change([this](const shared::VideoSettingsPacket& video_settings)
     {
         this->on_video_settings_change(video_settings);
     });
 
-    this->server.start();
+    if (!this->server->create())
+    {
+        return false;
+    }
 
     return true;
 }
@@ -230,11 +239,11 @@ bool Application::process_session()
     {
         if (message.type == SERVER_MESSAGE_SESSION_CREATE)
         {
-            const i3ds::SessionInitialization& session_create = message.data.session_create;
+            const shared::SessionCreatePacket& session_create = message.data.session_create;
 
             if (this->session != nullptr)
             {
-                std::cout << "Application: Session already open!" << std::endl;
+                spdlog::error("Application: Session already open!");
 
                 return false;
             }
@@ -250,31 +259,31 @@ bool Application::process_session()
             std::string scene_file_name;
             std::optional<std::string> sky_file_name;
 
-            uint32_t scene_file_length = strnlen(session_create.scene_filename, sizeof(session_create.scene_filename));
-            uint32_t sky_file_length = strnlen(session_create.sky_filename, sizeof(session_create.sky_filename));
+            uint32_t scene_file_length = strnlen(session_create.scene_file_name.data(), SHARED_STRING_LENGTH_MAX);
+            uint32_t sky_file_length = strnlen(session_create.sky_file_name.data(), SHARED_STRING_LENGTH_MAX);
 
             if (scene_file_length > 0)
             {
-                scene_file_name = std::string(session_create.scene_filename, scene_file_length);
+                scene_file_name = std::string(session_create.scene_file_name.data(), scene_file_length);
             }
 
             else
             {
-                std::cout << "Application: No scene specified!" << std::endl;
+                spdlog::error("Application: No scene specified!");
 
                 return false;
             }
 
             if (sky_file_length > 0)
             {
-                sky_file_name = std::string(session_create.sky_filename, sky_file_length);
+                sky_file_name = std::string(session_create.sky_file_name.data(), sky_file_length);
             }
 
             this->scene = new Scene();
 
             if (!this->scene->create(scene_file_name, session_create.scene_scale, session_create.scene_exposure, session_create.scene_indirect_intensity, sky_file_name, session_create.sky_intensity))
             {
-                std::cout << "Application: Can't create scene!" << std::endl;
+                spdlog::error("Application: Can't create scene!");
 
                 return false;
             }
@@ -285,16 +294,16 @@ bool Application::process_session()
 
             MeshGeneratorType mesh_generator_type = MESH_GENERATOR_TYPE_LINE_BASED;
 
-            switch (session_create.mesh_generation_method)
+            switch (session_create.mesh_generator)
             {
-            case i3ds::MeshGenerationMethod::LINE_BASED:
+            case shared::MESH_GENERATOR_TYPE_LINE:
                 mesh_generator_type = MESH_GENERATOR_TYPE_LINE_BASED;
                 break;
-            case i3ds::MeshGenerationMethod::LOOP_BASED:
+            case shared::MESH_GENERATOR_TYPE_LOOP:
                 mesh_generator_type = MESH_GENERATOR_TYPE_LOOP_BASED;
                 break;
             default:
-                std::cout << "Application: Unknown mesh generation method!" << std::endl;
+                spdlog::error("Application: Unknown mesh generation method!");
                 return false;
             }
 
@@ -302,25 +311,25 @@ bool Application::process_session()
 
             switch (session_create.video_codec)
             {
-            case i3ds::VideoCodec::H264:
+            case shared::VIDEO_CODEC_TYPE_H264:
                 codec = ENCODER_CODEC_H264;
                 break;
-            case i3ds::VideoCodec::H265:
+            case shared::VIDEO_CODEC_TYPE_H265:
                 codec = ENCODER_CODEC_H265;
                 break;
-            case i3ds::VideoCodec::AV1:
+            case shared::VIDEO_CODEC_TYPE_AV1:
                 codec = ENCODER_CODEC_AV1;
                 break;
             default:
-                std::cout << "Application: Unknown encoding!" << std::endl;
+                spdlog::error("Application: Unknown encoding!");
                 return false;
             }
 
             this->session = new Session();
 
-            if (!this->session->create(mesh_generator_type, codec, resolution, session_create.layer_count, session_create.video_use_chroma_subsampling, &this->server))
+            if (!this->session->create(this->server, mesh_generator_type, codec, resolution, session_create.layer_count, session_create.view_count, session_create.video_use_chroma_subsampling, session_create.export_enabled))
             {
-                std::cout << "Application: Can't create session!" << std::endl;
+                spdlog::error("Application: Can't create session!");
 
                 return false;
             }
@@ -328,7 +337,7 @@ bool Application::process_session()
             glm::mat4 view_matrix = glm::mat4(1.0f);
             glm::mat4 projection_matrix = glm::make_mat4(session_create.projection_matrix.data());
 
-            for (uint32_t index = 0; index < CAMERA_VIEW_COUNT; index++)
+            for (uint32_t index = 0; index < SHARED_VIEW_COUNT_MAX; index++)
             {
                 this->camera.set_view_matrix(index, view_matrix);
             }
@@ -353,9 +362,9 @@ bool Application::process_session()
             latest_request.reset();
         }
 
-        else if (message.type == SERVER_MESSAGE_MESH_REQUEST)
+        else if (message.type == SERVER_MESSAGE_RENDER_REQUEST)
         {
-            const i3ds::MeshRequest& mesh_request = message.data.mesh_request;
+            const shared::RenderRequestPacket& render_request = message.data.render_request;
 
             if (this->session == nullptr)
             {
@@ -364,7 +373,7 @@ bool Application::process_session()
 
             if (latest_request.has_value())
             {
-                if (latest_request->data.mesh_request.id < mesh_request.id)
+                if (latest_request->data.render_request.request_id < render_request.request_id)
                 {
                     latest_request = message;
                 }
@@ -378,7 +387,7 @@ bool Application::process_session()
 
         else if (message.type == SERVER_MESSAGE_MESH_SETTINGS)
         {
-            const i3ds::MeshGenerationSettings& mesh_settings = message.data.mesh_settings;
+            const shared::MeshSettingsPacket& mesh_settings = message.data.mesh_settings;
 
             if (this->session == nullptr)
             {
@@ -394,7 +403,7 @@ bool Application::process_session()
 
         else if (message.type == SERVER_MESSAGE_VIDEO_SETTINGS)
         {
-            const i3ds::VideoCompressionSettings video_settings = message.data.video_settings;
+            const shared::VideoSettingsPacket video_settings = message.data.video_settings;
 
             if (this->session == nullptr)
             {
@@ -403,14 +412,14 @@ bool Application::process_session()
 
             switch (video_settings.mode)
             {
-            case i3ds::VideoCompressionMode::CONSTANT_BITRATE:
+            case shared::VIDEO_CODEC_MODE_CONSTANT_BITRATE:
                 this->session->set_encoder_mode(ENCODER_MODE_CONSTANT_BITRATE);
                 break;
-            case i3ds::VideoCompressionMode::CONSTANT_QUALITY:
+            case shared::VIDEO_CODEC_MODE_CONSTANT_QUALITY:
                 this->session->set_encoder_mode(ENCODER_MODE_CONSTANT_QUALITY);
                 break;
             default:
-                std::cout << "Application: Unknown video mode!" << std::endl;
+                spdlog::error("Application: Unknown video mode!");
                 return false;
             }
 
@@ -421,7 +430,7 @@ bool Application::process_session()
 
         else
         {
-            std::cout << "Application: Unknown server message!" << std::endl;
+            spdlog::error("Application: Unknown server message!");
 
             return false;
         }
@@ -429,26 +438,44 @@ bool Application::process_session()
 
     if (latest_request.has_value())
     {
-        const i3ds::MeshRequest& mesh_request = latest_request->data.mesh_request;
+        const shared::RenderRequestPacket& render_request = latest_request->data.render_request;
 
         if (this->session == nullptr)
         {
             return true; //Ignore Message
         }
 
-        for (uint32_t view = 0; view < CAMERA_VIEW_COUNT; view++)
+        std::array<std::optional<std::string>, SHARED_EXPORT_COUNT_MAX> export_file_names;
+
+        for (uint32_t index = 0; index < SHARED_EXPORT_COUNT_MAX; index++)
         {
-            glm::mat4 view_matrix = glm::make_mat4(mesh_request.view_matrices[view].data());
+            uint32_t file_name_length = strnlen(render_request.export_file_names[index].data(), SHARED_STRING_LENGTH_MAX);
+
+            if (file_name_length > 0)
+            {
+                export_file_names[index] = std::string(render_request.export_file_names[index].data(), file_name_length);
+            }
+        }
+
+        ExportRequest export_request;
+        export_request.color_file_name = export_file_names[shared::EXPORT_TYPE_COLOR];
+        export_request.depth_file_name = export_file_names[shared::EXPORT_TYPE_DEPTH];
+        export_request.mesh_file_name = export_file_names[shared::EXPORT_TYPE_MESH];
+        export_request.feature_lines_file_name = export_file_names[shared::EXPORT_TYPE_FEATURE_LINES];
+
+        for (uint32_t view = 0; view < SHARED_VIEW_COUNT_MAX; view++)
+        {
+            glm::mat4 view_matrix = glm::make_mat4(render_request.view_matrices[view].data());
 
             this->camera.set_view_matrix(view, view_matrix);
         }
 
-        glm::mat4 view_matrix = glm::make_mat4(mesh_request.view_matrices[0].data());
+        glm::mat4 view_matrix = glm::make_mat4(render_request.view_matrices[0].data());
         this->camera.set_position(glm::inverse(view_matrix) * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
 
-        if (!this->session->render_frame(this->camera, *this->scene, mesh_request.id))
+        if (!this->session->render_frame(this->camera, *this->scene, render_request.request_id, export_request))
         {
-            lock.lock(); //Reinsert mesh request
+            lock.lock(); //Reinsert render request
             this->server_messages.insert(this->server_messages.begin(), latest_request.value());
             lock.unlock();
         }
@@ -457,61 +484,40 @@ bool Application::process_session()
     return true;
 }
 
-bool Application::process_input()
-{
-    if (this->session != nullptr)
-    {
-        if (glfwGetKey(this->window, GLFW_KEY_F1) == GLFW_PRESS)
-        {
-            this->server.send_server_action(i3ds::ServerAction::PREVIOUS_CONDITION);
-
-            std::cout << "Server: Previous condiction" << std::endl;
-        }
-
-        if (glfwGetKey(this->window, GLFW_KEY_F2) == GLFW_PRESS)
-        {
-            this->server.send_server_action(i3ds::ServerAction::NEXT_CONDITION);
-
-            std::cout << "Server: Next condiction" << std::endl;
-        }
-    }
-
-    return true;
-}
-
-void Application::on_session_create(const i3ds::SessionInitialization& session_settings)
+void Application::on_session_create(const shared::SessionCreatePacket& session_create)
 {
     std::unique_lock<std::mutex> lock(this->server_mutex);
 
     ServerMessage message;
     message.type = SERVER_MESSAGE_SESSION_CREATE;
-    message.data.session_create = session_settings;
+    message.data.session_create = session_create;
 
     this->server_messages.push_back(message);
 }
 
-void Application::on_session_destroy()
+void Application::on_session_destroy(const shared::SessionDestroyPacket& session_destroy)
 {
     std::unique_lock<std::mutex> lock(this->server_mutex);
 
     ServerMessage message;
     message.type = SERVER_MESSAGE_SESSION_DESTROY;
+    message.data.session_destroy = session_destroy;
 
     this->server_messages.push_back(message);
 }
 
-void Application::on_mesh_request(const i3ds::MeshRequest& mesh_request)
+void Application::on_render_request(const shared::RenderRequestPacket& render_request)
 {
     std::unique_lock<std::mutex> lock(this->server_mutex);
 
     ServerMessage message;
-    message.type = SERVER_MESSAGE_MESH_REQUEST;
-    message.data.mesh_request = mesh_request;
+    message.type = SERVER_MESSAGE_RENDER_REQUEST;
+    message.data.render_request = render_request;
 
     this->server_messages.push_back(message);
 }
 
-void Application::on_mesh_settings_change(const i3ds::MeshGenerationSettings& mesh_settings)
+void Application::on_mesh_settings_change(const shared::MeshSettingsPacket& mesh_settings)
 {
     std::unique_lock<std::mutex> lock(this->server_mutex);
 
@@ -522,7 +528,7 @@ void Application::on_mesh_settings_change(const i3ds::MeshGenerationSettings& me
     this->server_messages.push_back(message);
 }
 
-void Application::on_video_settings_change(const i3ds::VideoCompressionSettings& video_settings)
+void Application::on_video_settings_change(const shared::VideoSettingsPacket& video_settings)
 {
     std::unique_lock<std::mutex> lock(this->server_mutex);
 
@@ -537,6 +543,6 @@ void GLAPIENTRY Application::on_opengl_error(GLenum source, GLenum type, GLuint 
 {
     if (type == GL_DEBUG_TYPE_ERROR)
     {
-        std::cout << "OpenGL: " << message << std::endl;
+        spdlog::error("OpenGL: {}", message);
     }
 }

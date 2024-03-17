@@ -5,14 +5,20 @@
 namespace shared
 {
     // In addition to the websocket stream described by the following packets, the server also provides several functions based on HTTP Gets and Posts
-    // [GET]  /scene                      -> Requests the avaliable scenes that the server could load.
-    // [GET]  /motion_capture             -> Requests the avaliable motion capture that could be requested by the client.
-    // [GET]  /motion_capture?id=<number> -> Requests the id-th motion capture in the list returned by "/motion_capture". 
-    //                                       Server will respond with a json file that contains triplets of time, source perspective and destination perspective.
-    // [POST] /motion_capture             -> Server will store the given motion capture.
-    // [POST] /log                        -> Server will store the given table row in the specified file.
-    // [POST] /image                      -> Server will store the given uncompressed RGBA8 image file.
-
+    // [GET]  /scenes                                        > Requests the avaliable scenes that the server could load.
+    //                                                          The server will respond with a json array contaning the file names of the available scenes.
+    // [GET]  /files/<directory_path>/                       > Requests the entires of the directory specified by the directory path.
+    //                                                          The server will respond with a json array containing the names of the files within the specified directory.
+    // [GET]  /files/<directory_path>/<file_name>            > Requests the file specified by the directory path and the file name.
+    //                                                          The server will respond with the binary content of the specifed file.
+    // [POST] /files/<directory_path>/<file_name>?type=log   > Writes the given information to the file specified by the directory path and the file name. 
+    //                                                          Files and directorys are created if they do not exist.
+    //                                                          In case the file already exists, the given information is appended.
+    // [POST] /files/<directory_path>/<file_name>?type=image > Writes the given image to the file specified by the directory path and the file name. 
+    //                                                          Files and directorys are created if they do not exist. 
+    //                                                          In case the file already exists, the file is overwritten.
+    //                                                          The server expects in binary the width (uint32_t), the height (uint32_t) and the content of the image (RGB uint8_t per channel).
+    
     enum PacketType : uint32_t
     {
         PACKET_TYPE_SESSION_CREATE  = 0x00,
@@ -31,19 +37,21 @@ namespace shared
         VideoCodecType video_codec = VIDEO_CODEC_TYPE_H264;
         uint8_t video_use_chroma_subsampling = true;
 
-        Matrix view_projection_matrix;
-        uint32_t view_resolution_width = 1024;
-        uint32_t view_resolution_height = 1024;
-        uint32_t view_count = 1;
+        Matrix projection_matrix;
+        uint32_t resolution_width = 1024;
+        uint32_t resolution_height = 1024;
         uint32_t layer_count = 1;
+        uint32_t view_count = 1;
         
-        char scene_filename[SHARED_SCENE_FILE_NAME_LENGTH_MAX];
+        String scene_file_name;
         float scene_scale = 1.0f;
         float scene_exposure = 1.0f;
         float scene_indirect_intensity = 1.0f;
 
-        char sky_filename[SHARED_SKY_FILE_NAME_LENGTH_MAX];
+        String sky_file_name;
         float sky_intensity = 1.0f;
+
+        bool export_enabled = false;
     };
 
     struct SessionDestroyPacket
@@ -58,8 +66,7 @@ namespace shared
         PacketType type = PACKET_TYPE_RENDER_REQUEST;
 
         uint32_t request_id = 0;
-        uint32_t request_exports = 0; // Bitfield defined by MeshRequestExport
-
+        std::array<String, SHARED_EXPORT_COUNT_MAX> export_file_names;
         std::array<Matrix, SHARED_VIEW_COUNT_MAX> view_matrices;
     };
 

@@ -6,12 +6,12 @@
 #include <gli/gli.hpp>
 #include <ImfRgbaFile.h>
 #include <ImfArray.h>
-#include <iostream>
+#include <spdlog/spdlog.h>
 #include <memory>
 
 bool Scene::create(const std::string& scene_file_name, float scale, float exposure, float indirect_intensity, std::optional<std::string> sky_file_name, float sky_intensity)
 {
-    std::cout << "Scene: Loading scene" << std::endl;
+    spdlog::info("Scene: Loading scene '{}'", scene_file_name);
 
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(scene_file_name.c_str(), aiProcess_PreTransformVertices | aiProcess_Triangulate | aiProcess_JoinIdenticalVertices | aiProcess_MakeLeftHanded | aiProcess_CalcTangentSpace | aiProcess_FlipUVs | aiProcess_GenSmoothNormals);
@@ -67,7 +67,7 @@ bool Scene::create(const std::string& scene_file_name, float scale, float exposu
     this->exposure = exposure;
     this->indirect_intensity = indirect_intensity;
 
-    std::cout << "Scene: Scene loaded" << std::endl;
+    spdlog::info("Scene: Scene loaded");
 
     return true;
 }
@@ -180,6 +180,27 @@ void Scene::render(const Shader& shader) const
     glDisable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
 
     glBindVertexArray(0);
+}
+
+bool Scene::is_file_supported(const std::string& extension)
+{
+    std::vector<std::string> supported_list =
+    {
+        ".fbx",
+        ".gltf",
+        ".glb",
+        ".obj"
+    };
+
+    for (const std::string& supported : supported_list)
+    {
+        if (extension == supported)
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool Scene::create_defaults()
@@ -763,7 +784,7 @@ bool Scene::create_material_texture_from_material(const aiMaterial* scene_materi
             use_roughness_factor = false;
             use_metallic_factor = true;
 
-            std::cout << "Can't combine textures: " << roughness_texture->file_name << ", " << metallic_texture->file_name << std::endl;
+            spdlog::warn("Scene: Can't combine textures: {}, {}", roughness_texture->file_name , metallic_texture->file_name);
 
             return true;
         }
@@ -919,7 +940,7 @@ bool Scene::create_texture_from_material(const aiMaterial* scene_material, const
         }
     }
 
-    std::cout << "Scene: Loading texture " << file_name << std::endl;
+    spdlog::info("Scene: Loading texture {}", file_name);
 
     std::string file_extension = file_name.substr(file_name.find_last_of('.'));
 
@@ -948,7 +969,7 @@ bool Scene::create_texture_from_sky_file(const std::string& file_name, Texture*&
 
     if (image_pointer == nullptr)
     {
-        std::cout << "Can't load texture: " << file_name << std::endl;
+        spdlog::error("Can't load texture: {}", file_name);
 
         return false;
     }
@@ -999,7 +1020,7 @@ bool Scene::create_texture_from_regular_file(const std::string& file_name, bool 
 
     if (image_pointer == nullptr)
     {
-        std::cout << "Can't load texture: " << file_name << std::endl;
+        spdlog::warn("Can't load texture: {}", file_name);
 
         return false;
     }
@@ -1061,7 +1082,7 @@ bool Scene::create_texture_from_high_bitdepth_file(const std::string& file_name,
 
     catch (const std::exception& exception)
     {
-        std::cout << "Can't load texture: " << exception.what() << std::endl;
+        spdlog::warn("Can't load texture: {}", exception.what());
 
         return false;
     }
@@ -1133,7 +1154,7 @@ bool Scene::create_texture_from_compressed_file(const std::string& file_name, bo
 
     if (image.empty())
     {
-        std::cout << "Can't load texture: " << file_name << std::endl;
+        spdlog::warn("Can't load texture: {}", file_name);
 
         return false;
     }
@@ -1247,7 +1268,7 @@ void Scene::compute_indirect_domain()
         this->indirect_cell_size = glm::vec3(std::cbrt(factor_scene / factor_limit));
         this->indirect_cell_count = glm::uvec3(glm::max(glm::ceil(scene_size / this->indirect_cell_size), glm::vec3(1.0f)));
 
-        std::cout << "Indirect memory limit reached!" << std::endl;
+        spdlog::warn("Indirect memory limit reached!");
     }
 
     this->indirect_domain_min = scene_center - 0.5f * this->indirect_cell_size * glm::vec3(this->indirect_cell_count);

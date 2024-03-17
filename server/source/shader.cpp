@@ -1,7 +1,8 @@
 #include "shader.hpp"
 #include <fstream>
-#include <iostream>
 #include <string>
+
+#include <spdlog/spdlog.h>
 
 struct UniformEntry
 {
@@ -143,8 +144,8 @@ bool show_shader_log(GLuint shader, const std::string& shader_name)
         std::string log_string(log_lenght, '\0');
         glGetShaderInfoLog(shader, log_lenght, nullptr, log_string.data());
 
-        std::cout << "Shader Name: " << shader_name << std::endl;
-        std::cout << log_string << std::endl;
+        spdlog::error("Shader: Error during compilation of shader '{}'!", shader_name);
+        spdlog::error(log_string);
 
         return false;
     }
@@ -165,8 +166,8 @@ bool show_program_log(GLuint program, const std::string& shader_name)
         std::string log_string(log_lenght, '\0');
         glGetProgramInfoLog(program, log_lenght, nullptr, log_string.data());
 
-        std::cout << "Shader Name: " << shader_name << std::endl;
-        std::cout << log_string << std::endl;
+        spdlog::error("Shader: Error during linking of shader '{}'!", shader_name);
+        spdlog::error(log_string);
 
         return false;
     }
@@ -298,8 +299,7 @@ void ShaderUniform::operator=(bool value) const
 
     if (this->entry->type != GL_BOOL)
     {
-        std::cout << "Shader Name: " << this->shader->get_shader_name() << std::endl;
-        std::cout << "Wrong uniform type attached to uniform \"" << this->entry->name << "\" !" << std::endl;
+        spdlog::warn("Shader: Wrong uniform type attached to uniform '{}' of shader '{}'!", this->entry->name, this->shader->get_shader_name());
 
         return;
     }
@@ -316,8 +316,7 @@ void ShaderUniform::operator=(uint32_t value) const
 
     if(this->entry->type != GL_UNSIGNED_INT)
     {
-        std::cout << "Shader Name: " << this->shader->get_shader_name() << std::endl;
-        std::cout << "Wrong uniform type attached to uniform \"" << this->entry->name << "\" !" << std::endl;
+        spdlog::warn("Shader: Wrong uniform type attached to uniform '{}' of shader '{}'!", this->entry->name, this->shader->get_shader_name());
 
         return;
     }
@@ -334,8 +333,7 @@ void ShaderUniform::operator=(int32_t value) const
 
     if(this->entry->type != GL_INT && !is_uniform_sampler(this->entry->type))
     {
-        std::cout << "Shader Name: " << this->shader->get_shader_name() << std::endl;
-        std::cout << "Wrong uniform type attached to uniform \"" << this->entry->name << "\" !" << std::endl;
+        spdlog::warn("Shader: Wrong uniform type attached to uniform '{}' of shader '{}'!", this->entry->name, this->shader->get_shader_name());
 
         return;
     }
@@ -352,8 +350,7 @@ void ShaderUniform::operator=(float value) const
 
     if(this->entry->type != GL_FLOAT)
     {
-        std::cout << "Shader Name: " << this->shader->get_shader_name() << std::endl;
-        std::cout << "Wrong uniform type attached to uniform \"" << this->entry->name << "\" !" << std::endl;
+        spdlog::warn("Shader: Wrong uniform type attached to uniform '{}' of shader '{}'!", this->entry->name, this->shader->get_shader_name());
 
         return;
     }
@@ -370,8 +367,7 @@ void ShaderUniform::operator=(double value) const
 
     if(this->entry->type != GL_DOUBLE)
     {
-        std::cout << "Shader Name: " << this->shader->get_shader_name() << std::endl;
-        std::cout << "Wrong uniform type attached to uniform \"" << this->entry->name << "\" !" << std::endl;
+        spdlog::warn("Shader: Wrong uniform type attached to uniform '{}' of shader '{}'!", this->entry->name, this->shader->get_shader_name());
 
         return;
     }
@@ -388,16 +384,14 @@ void ShaderUniform::operator=(const std::vector<int32_t>& value) const
 
     if (this->entry->type != GL_INT && !is_uniform_sampler(this->entry->type))
     {
-        std::cout << "Shader Name: " << this->shader->get_shader_name() << std::endl;
-        std::cout << "Wrong uniform type attached to uniform \"" << this->entry->name << "\" !" << std::endl;
+        spdlog::warn("Shader: Wrong uniform type attached to uniform '{}' of shader '{}'!", this->entry->name, this->shader->get_shader_name());
 
         return;
     }
 
     if (value.size() > this->entry->array_size)
     {
-        std::cout << "Shader Name: " << this->shader->get_shader_name() << std::endl;
-        std::cout << "Wrong uniform array size attached to uniform \"" << this->entry->name << "\" !" << std::endl;
+        spdlog::warn("Shader: Wrong uniform array size attached to uniform '{}' of shader '{}'!", this->entry->name, this->shader->get_shader_name());
 
         return;
     }
@@ -414,8 +408,7 @@ void ShaderUniform::operator=(const glm::vec2& value) const
 
     if (this->entry->type != GL_FLOAT_VEC2)
     {
-        std::cout << "Shader Name: " << this->shader->get_shader_name() << std::endl;
-        std::cout << "Wrong uniform type attached to uniform \"" << this->entry->name << "\" !" << std::endl;
+        spdlog::warn("Shader: Wrong uniform type attached to uniform '{}' of shader '{}'!", this->entry->name, this->shader->get_shader_name());
 
         return;
     }
@@ -432,8 +425,7 @@ void ShaderUniform::operator=(const glm::vec3& value) const
 
     if (this->entry->type != GL_FLOAT_VEC3)
     {
-        std::cout << "Shader Name: " << this->shader->get_shader_name() << std::endl;
-        std::cout << "Wrong uniform type attached to uniform \"" << this->entry->name << "\" !" << std::endl;
+        spdlog::warn("Shader: Wrong uniform type attached to uniform '{}' of shader '{}'!", this->entry->name, this->shader->get_shader_name());
 
         return;
     }
@@ -450,8 +442,7 @@ void ShaderUniform::operator=(const glm::uvec3& value) const
 
     if (this->entry->type != GL_UNSIGNED_INT_VEC3)
     {
-        std::cout << "Shader Name: " << this->shader->get_shader_name() << std::endl;
-        std::cout << "Wrong uniform type attached to uniform \"" << this->entry->name << "\" !" << std::endl;
+        spdlog::warn("Shader: Wrong uniform type attached to uniform '{}' of shader '{}'!", this->entry->name, this->shader->get_shader_name());
 
         return;
     }
@@ -468,8 +459,7 @@ void ShaderUniform::operator=(const glm::vec4& value) const
 
     if (this->entry->type != GL_FLOAT_VEC4)
     {
-        std::cout << "Shader Name: " << this->shader->get_shader_name() << std::endl;
-        std::cout << "Wrong uniform type attached to uniform \"" << this->entry->name << "\" !" << std::endl;
+        spdlog::warn("Shader: Wrong uniform type attached to uniform '{}' of shader '{}'!", this->entry->name, this->shader->get_shader_name());
 
         return;
     }
@@ -486,8 +476,7 @@ void ShaderUniform::operator=(const glm::mat4& value) const
 
     if (this->entry->type != GL_FLOAT_MAT4)
     {
-        std::cout << "Shader Name: " << this->shader->get_shader_name() << std::endl;
-        std::cout << "Wrong uniform type attached to uniform \"" << this->entry->name << "\" !" << std::endl;
+        spdlog::warn("Shader: Wrong uniform type attached to uniform '{}' of shader '{}'!", this->entry->name, this->shader->get_shader_name());
 
         return;
     }
@@ -517,8 +506,7 @@ bool Shader::load_shader(const char* file_name, ShaderType type)
 
     if(!file.good())
     {
-        std::cout << "Shader Name: " + this->shader_name << std::endl;
-        std::cout << "Can't find shader file \"" << file_name << "\" !" << std::endl;
+        spdlog::error("Shader: Can't find file '{}' for shader '{}'!", file_name, this->shader_name);
 
         file.close();
 
@@ -565,8 +553,7 @@ bool Shader::load_shader(const char* file_name, ShaderType type, const ShaderDef
 
     if (!file.good())
     {
-        std::cout << "Shader Name: " + this->shader_name << std::endl;
-        std::cout << "Can't find shader file \"" << file_name << "\" !" << std::endl;
+        spdlog::error("Shader: Can't find file '{}' for shader '{}'!", file_name, this->shader_name);
 
         file.close();
 
@@ -676,8 +663,7 @@ bool Shader::set_shader_storage_buffer(const char* buffer_name, uint32_t binding
 
     if(block_index == GL_INVALID_INDEX)
     {
-        std::cout << "Shader Name: " << this->shader_name << std::endl;
-        std::cout << "Can't bind buffer \"" << buffer_name << "\" to binding point \"" << binding_point << "\" !" << std::endl;
+        spdlog::error("Shader: Can't bind buffer '{}' to binding point '{}' of shader '{}'!", buffer_name, binding_point, this->shader_name);
 
         return false;
     }
@@ -698,8 +684,7 @@ bool Shader::set_uniform_buffer(const char* buffer_name, uint32_t binding_point)
 
     if(block_index == GL_INVALID_INDEX)
     {
-        std::cout << "Shader Name: " << this->shader_name << std::endl;
-        std::cout << "Can't bind buffer \"" << buffer_name << "\" to binding point \"" << binding_point << "\" !" << std::endl;
+        spdlog::error("Shader: Can't bind buffer '{}' to binding point '{}' of shader '{}'!", buffer_name, binding_point, this->shader_name);
 
         return false;
     }
@@ -715,8 +700,7 @@ bool Shader::set_subroutines(ShaderType shader_type, uint32_t subroutine_count, 
 
     if(this->subroutines[shader_index].size() != subroutine_count)
     {
-        std::cout << "Shader Name: " + this->shader_name << std::endl;
-        std::cout << "Wrong subroutine uniform count !" << std::endl;
+        spdlog::error("Shader: Wrong subroutine uniform count for shader '{}'!", this->shader_name);
 
         return false;
     }
@@ -739,8 +723,7 @@ bool Shader::set_subroutines(ShaderType shader_type, uint32_t subroutine_count, 
 
         if(subroutine == nullptr)
         {
-            std::cout << "Shader Name: " + this->shader_name << std::endl;
-            std::cout << "Can't find subroutine uniform \"" << uniform_entry->uniform_name << "\" !" << std::endl;
+            spdlog::error("Shader: Can't find subroutine uniform '{}' in shader '{}'", uniform_entry->uniform_name, this->shader_name);
 
             return false;
         }
@@ -749,8 +732,7 @@ bool Shader::set_subroutines(ShaderType shader_type, uint32_t subroutine_count, 
 
         if(uniform_entry->array_size != indices.size())
         {
-            std::cout << "Shader Name: " + this->shader_name << std::endl;
-            std::cout << "Wrong subroutine index count !" << std::endl;
+            spdlog::error("Shader: Wrong subroutine index count for shader '{}'", this->shader_name);
 
             return false;
         }
@@ -772,8 +754,7 @@ bool Shader::set_subroutines(ShaderType shader_type, uint32_t subroutine_count, 
 
             if(!found)
             {
-                std::cout << "Shader Name: " + this->shader_name << std::endl;
-                std::cout << "Incompatible subroutine index !" << std::endl;
+                spdlog::error("Shader: Incompatible subroutine index for shader '{}'", this->shader_name);
 
                 return false;
             }
@@ -795,8 +776,7 @@ ShaderUniform Shader::operator[](const char* uniform_name) const
         }
     }
 
-    std::cout << "Shader Name: " << this->shader_name << std::endl;
-    std::cout << "Can't find uniform \"" << uniform_name << "\" !" << std::endl;
+    spdlog::warn("Shader: Can't find uniform '{}' in shader '{}'!", uniform_name, this->shader_name);
 
     return ShaderUniform(nullptr, this);
 }

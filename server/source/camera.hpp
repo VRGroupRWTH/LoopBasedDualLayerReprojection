@@ -7,10 +7,10 @@
 #include <glm/gtc/constants.hpp>
 #include <glm/gtx/transform.hpp>
 #include <glm/gtx/quaternion.hpp>
+#include <types.hpp>
 #include <chrono>
 #include <array>
 
-#define CAMERA_VIEW_COUNT 6
 #define CAMERA_MOVEMENT_SPEED 1.5f
 #define CAMERA_ROTATION_SPEED 0.05f
 #define CAMERA_FIELD_OF_VIEW 80.0f
@@ -31,7 +31,7 @@ private:
     float horizontal_angle = -glm::pi<float>();
 
     glm::mat4 projection_matrix = glm::mat4(1.0f);
-    std::array<glm::mat4, CAMERA_VIEW_COUNT> view_matrix;
+    std::array<glm::mat4, SHARED_VIEW_COUNT_MAX> view_matrix;
 
 public:
     Camera();

@@ -327,15 +327,15 @@ uint32_t LineQuadTree::get_level_count() const
     return this->levels.size();
 }
 
-bool LineGeneratorFrame::triangulate(std::vector<i3ds::Vertex>& vertices, std::vector<i3ds::Index>& indices, i3ds::ViewStatistic& statistic)
+bool LineGeneratorFrame::triangulate(std::vector<shared::Vertex>& vertices, std::vector<shared::Index>& indices, shared::ViewMetadata& metadata, std::vector<MeshFeatureLine>& feature_lines, bool export_feature_lines)
 {
-    statistic.line_based.time_line_trace = 0.0f;
-    statistic.line_based.time_triangulation = 0.0f;
+    metadata.line.time_line_trace = 0.0f;
+    metadata.line.time_triangulation = 0.0f;
 
-    statistic.line_based.time_edge_detection = this->time_edge;
-    statistic.line_based.time_quad_tree = this->time_quad_tree;
+    metadata.line.time_edge_detection = this->time_edge;
+    metadata.line.time_quad_tree = this->time_quad_tree;
 
-    this->triangulation.process(this->resolution, this->depth_max, this->line_length_min, this->depth_copy_pointer, this->quad_tree, vertices, indices, statistic);
+    this->triangulation.process(this->resolution, this->depth_max, this->line_length_min, this->depth_copy_pointer, this->quad_tree, vertices, indices, metadata, feature_lines, export_feature_lines);
 
     return true;
 }
@@ -382,12 +382,12 @@ void LineGenerator::destroy()
     this->edge_buffer = 0;
 }
 
-void LineGenerator::apply(const i3ds::MeshSettings& settings)
+void LineGenerator::apply(const shared::MeshSettings& settings)
 {
     this->depth_max = settings.depth_max;
-    this->laplace_threshold = settings.line_based.laplace_threshold;
-    this->normal_scale = settings.line_based.normal_scale;
-    this->line_length_min = settings.line_based.line_length_min;
+    this->laplace_threshold = settings.line.laplace_threshold;
+    this->normal_scale = settings.line.normal_scale;
+    this->line_length_min = settings.line.line_length_min;
 }
 
 MeshGeneratorFrame* LineGenerator::create_frame()

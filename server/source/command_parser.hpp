@@ -8,6 +8,9 @@
 class CommandParser
 {
 private:
+    std::string scene_directory = "./scene";
+    std::string study_directory = "./study";
+
     std::optional<std::string> scene_file_name;
     float scene_scale = 1.0f;
     float scene_exposure = 1.0f;
@@ -20,6 +23,9 @@ public:
     CommandParser() = default;
 
     bool parse(uint32_t argument_count, const char** argument_list);
+
+    const std::string& get_scene_directory() const;
+    const std::string& get_study_directory() const;
 
     std::optional<std::string> get_scene_file_name() const;
     float get_scene_scale() const;

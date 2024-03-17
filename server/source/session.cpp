@@ -1,8 +1,8 @@
 #include "session.hpp"
 
-bool Session::create(Server* server, MeshGeneratorType mesh_generator_type, EncoderCodec codec, const glm::uvec2& resolution, uint32_t layer_count, bool chroma_subsampling)
+bool Session::create(Server* server, MeshGeneratorType mesh_generator_type, EncoderCodec codec, const glm::uvec2& resolution, uint32_t layer_count, uint32_t view_count, bool chroma_subsampling, bool export_enabled)
 {
-    if (!this->worker_pool.create(server))
+    if (!this->worker_pool.create(server, view_count, export_enabled))
     {
         return false;
     }
@@ -19,7 +19,17 @@ bool Session::create(Server* server, MeshGeneratorType mesh_generator_type, Enco
         return false;
     }
 
-    glm::uvec2 encoder_resolution = glm::uvec2(resolution.x * 3, resolution.y * 2);
+    glm::uvec2 encoder_resolution = glm::uvec2(0);
+
+    if (view_count <= 3)
+    {
+        encoder_resolution = glm::uvec2(resolution.x * view_count, resolution.y);
+    }
+
+    else
+    {
+        encoder_resolution = glm::uvec2(resolution.x * 3, resolution.y * 2);
+    }
 
     for(uint32_t layer = 0; layer < layer_count; layer++)
     {
@@ -38,13 +48,15 @@ bool Session::create(Server* server, MeshGeneratorType mesh_generator_type, Enco
         return false;
     }
 
-    if (!this->create_frames(resolution, layer_count))
+    if (!this->create_frames(resolution, layer_count, view_count, export_enabled))
     {
         return false;
     }
 
     this->resolution = resolution;
     this->layer_count = layer_count;
+    this->view_count = view_count;
+    this->export_enabled = export_enabled;
 
     return true;
 }
@@ -58,7 +70,7 @@ void Session::destroy()
     {
         uint32_t layer = frame->layer_index;
 
-        for (uint32_t view = 0; view < CAMERA_VIEW_COUNT; view++)
+        for (uint32_t view = 0; view < this->view_count; view++)
         {
             this->mesh_generator->unmap_frame(frame->mesh_generator_frame[view]);
         }
@@ -91,7 +103,7 @@ void Session::destroy()
     this->encoder_context.destroy();
 }
 
-bool Session::render_frame(const Camera& camera, const Scene& scene, uint32_t request_id)
+bool Session::render_frame(const Camera& camera, const Scene& scene, uint32_t request_id, ExportRequest& export_request)
 {
     for (uint32_t layer = 0; layer < this->layer_count; layer++)
     {
@@ -109,6 +121,8 @@ bool Session::render_frame(const Camera& camera, const Scene& scene, uint32_t re
         this->empty_frames[layer].pop_back();
 
         current_layer->request_id = request_id;
+        current_layer->export_request = export_request;
+        current_layer->projection_matrix = camera.get_projection_matrix();
         
         glViewport(0, 0, this->resolution.x, this->resolution.y);
 
@@ -127,7 +141,7 @@ bool Session::render_frame(const Camera& camera, const Scene& scene, uint32_t re
         this->layer_shader["layer_use_object_ids"] = this->layer_use_object_ids;
         this->layer_shader["layer"] = layer;
 
-        for (uint32_t view = 0; view < CAMERA_VIEW_COUNT; view++)
+        for (uint32_t view = 0; view < this->view_count; view++)
         {
             current_layer->view_matrix[view] = camera.get_view_matrix(view);
 
@@ -168,6 +182,29 @@ bool Session::render_frame(const Camera& camera, const Scene& scene, uint32_t re
             glCopyImageSubData(current_layer->color_view_buffer, GL_TEXTURE_2D, 0, 0, 0, 0, current_layer->encoder_frame->color_buffer, GL_TEXTURE_2D, 0, view_offset.x, view_offset.y, 0, this->resolution.x, this->resolution.y, 1);
 
             current_layer->layer_timer[view].end();
+
+            if (this->export_enabled)
+            {
+                glBindBuffer(GL_PIXEL_PACK_BUFFER, current_layer->color_export_buffers[view]);
+                glBindBuffer(GL_TEXTURE_2D, current_layer->color_view_buffer);
+
+                glPixelStorei(GL_PACK_ALIGNMENT, 1);
+                glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_INT, nullptr);
+                glPixelStorei(GL_PACK_ALIGNMENT, 4);
+
+                glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+                glBindBuffer(GL_TEXTURE_2D, 0);
+             
+                glBindBuffer(GL_PIXEL_PACK_BUFFER, current_layer->depth_export_buffers[view]);
+                glBindTexture(GL_TEXTURE_2D, current_layer->mesh_generator_frame[view]->get_depth_buffer());
+                
+                glPixelStorei(GL_PACK_ALIGNMENT, 1);
+                glGetTexImage(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+                glPixelStorei(GL_PACK_ALIGNMENT, 4);
+
+                glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+                glBindBuffer(GL_TEXTURE_2D, 0);
+            }
         }
 
         this->layer_shader.use_default();
@@ -176,7 +213,7 @@ bool Session::render_frame(const Camera& camera, const Scene& scene, uint32_t re
         glDisable(GL_CULL_FACE);
         glDisable(GL_FRAMEBUFFER_SRGB);
 
-        for (uint32_t view = 0; view < CAMERA_VIEW_COUNT; view++)
+        for (uint32_t view = 0; view < this->view_count; view++)
         {
             if (!this->mesh_generator->submit_frame(current_layer->mesh_generator_frame[view]))
             {
@@ -207,7 +244,7 @@ void Session::check_frames()
             bool mesh_generator_complete = true;
             bool layer_complete = true;
 
-            for (uint32_t view = 0; view < CAMERA_VIEW_COUNT; view++)
+            for (uint32_t view = 0; view < this->view_count; view++)
             {
                 if (!frame->mesh_generator_complete[view])
                 {
@@ -219,7 +256,7 @@ void Session::check_frames()
 
             if (mesh_generator_complete)
             {
-                for (uint32_t view = 0; view < CAMERA_VIEW_COUNT; view++)
+                for (uint32_t view = 0; view < this->view_count; view++)
                 {
                     if (!frame->layer_timer[view].get_time(frame->time_layer[view], TIMER_UNIT_MILLISECONDS))
                     {
@@ -256,7 +293,7 @@ void Session::check_frames()
     {
         uint32_t layer = frame->layer_index;
 
-        for (uint32_t view = 0; view < CAMERA_VIEW_COUNT; view++)
+        for (uint32_t view = 0; view < this->view_count; view++)
         {
             this->mesh_generator->unmap_frame(frame->mesh_generator_frame[view]);
         }
@@ -353,7 +390,7 @@ bool Session::create_shaders()
     return true;
 }
 
-bool Session::create_frames(const glm::uvec2& resolution, uint32_t layer_count)
+bool Session::create_frames(const glm::uvec2& resolution, uint32_t layer_count, uint32_t view_count, bool export_enabled)
 {
     this->empty_frames.resize(layer_count);
     this->active_frames.resize(layer_count);
@@ -364,6 +401,7 @@ bool Session::create_frames(const glm::uvec2& resolution, uint32_t layer_count)
         {
             Frame* frame = new Frame;
             frame->layer_index = layer;
+            frame->resolution = resolution;
 
             frame->encoder_frame = this->encoders[layer]->create_frame();
 
@@ -384,7 +422,7 @@ bool Session::create_frames(const glm::uvec2& resolution, uint32_t layer_count)
 
             glBindTexture(GL_TEXTURE_2D, 0);
 
-            for (uint32_t view = 0; view < CAMERA_VIEW_COUNT; view++)
+            for (uint32_t view = 0; view < view_count; view++)
             {
                 if (!frame->layer_timer[view].create())
                 {
@@ -423,6 +461,28 @@ bool Session::create_frames(const glm::uvec2& resolution, uint32_t layer_count)
                 }
 
                 glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+                if (export_enabled)
+                {
+                    uint32_t color_export_buffer_size = resolution.x * resolution.y * sizeof(glm::u8vec3);
+                    uint32_t depth_export_buffer_size = resolution.x * resolution.y * sizeof(float);
+
+                    glGenBuffers(1, &frame->color_export_buffers[view]);
+                    glBindBuffer(GL_PIXEL_PACK_BUFFER, frame->color_export_buffers[view]);
+
+                    glBufferStorage(GL_PIXEL_PACK_BUFFER, color_export_buffer_size, nullptr, GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT | GL_CLIENT_STORAGE_BIT);
+                    frame->color_export_pointers[view] = (uint8_t*)glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, color_export_buffer_size, GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+
+                    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+
+                    glGenBuffers(1, &frame->depth_export_buffers[view]);
+                    glBindBuffer(GL_PIXEL_PACK_BUFFER, frame->depth_export_buffers[view]);
+
+                    glBufferStorage(GL_PIXEL_PACK_BUFFER, depth_export_buffer_size, nullptr, GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT | GL_CLIENT_STORAGE_BIT);
+                    frame->color_export_pointers[view] = (uint8_t*)glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, depth_export_buffer_size, GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+
+                    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+                }
             }
 
             this->empty_frames[layer].push_back(frame);
@@ -438,38 +498,12 @@ void Session::destroy_frames()
     {
         for (Frame* frame : this->empty_frames[layer])
         {
-            for (uint32_t view = 0; view < CAMERA_VIEW_COUNT; view++)
-            {
-                frame->layer_timer[view].destroy();
-
-                glDeleteFramebuffers(1, &frame->frame_buffers[view]);
-
-                this->mesh_generator->destroy_frame(frame->mesh_generator_frame[view]);
-            }
-
-            glDeleteTextures(1, &frame->color_view_buffer);
-
-            this->encoders[layer]->destroy_frame(frame->encoder_frame);
-
-            delete frame;
+            this->destroy_frame(frame);
         }
 
         for (Frame* frame : this->active_frames[layer])
         {
-            for (uint32_t view = 0; view < CAMERA_VIEW_COUNT; view++)
-            {
-                frame->layer_timer[view].destroy();
-
-                glDeleteFramebuffers(1, &frame->frame_buffers[view]);
-
-                this->mesh_generator->destroy_frame(frame->mesh_generator_frame[view]);
-            }
-
-            glDeleteTextures(1, &frame->color_view_buffer);
-
-            this->encoders[layer]->destroy_frame(frame->encoder_frame);
-
-            delete frame;
+            this->destroy_frame(frame);
         }
 
         this->empty_frames[layer].clear();
@@ -478,4 +512,26 @@ void Session::destroy_frames()
 
     this->empty_frames.clear();
     this->active_frames.clear();
+}
+
+void Session::destroy_frame(Frame* frame)
+{
+    for (uint32_t view = 0; view < this->view_count; view++)
+    {
+        glDeleteFramebuffers(1, &frame->frame_buffers[view]);
+        glDeleteBuffers(1, &frame->color_export_buffers[view]);
+        glDeleteBuffers(1, &frame->depth_export_buffers[view]);
+
+        frame->color_export_pointers[view] = nullptr;
+        frame->depth_export_pointers[view] = nullptr;
+        frame->layer_timer[view].destroy();
+
+        this->mesh_generator->destroy_frame(frame->mesh_generator_frame[view]);
+    }
+
+    glDeleteTextures(1, &frame->color_view_buffer);
+
+    this->encoders[frame->layer_index]->destroy_frame(frame->encoder_frame);
+
+    delete frame;
 }

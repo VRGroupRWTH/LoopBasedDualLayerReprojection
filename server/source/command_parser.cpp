@@ -1,6 +1,6 @@
 #include "command_parser.hpp"
 
-#include <iostream>
+#include <spdlog/spdlog.h>
 #include <vector>
 
 struct Parameter
@@ -20,7 +20,7 @@ bool CommandParser::parse(uint32_t argument_count, const char** argument_list)
 
         if (argument.substr(0, 2) != "--")
         {
-            std::cout << "Invalid argument: " << argument << std::endl;
+            spdlog::error("Invalid argument: {}", argument);
 
             return false;
         }
@@ -49,7 +49,7 @@ bool CommandParser::parse(uint32_t argument_count, const char** argument_list)
 
     for (const std::string& flag : flags)
     {
-        std::cout << "Invalid flag: " << flag << std::endl;
+        spdlog::error("Invalid flag: {}", flag);
 
         return false;
     }
@@ -81,9 +81,19 @@ bool CommandParser::parse(uint32_t argument_count, const char** argument_list)
             this->sky_intensity = std::atof(parameter.value.c_str());
         }
 
+        else if (parameter.name == "scene_directory")
+        {
+            this->scene_directory = parameter.value;
+        }
+
+        else if (parameter.name == "study_directory")
+        {
+            this->study_directory = parameter.value;
+        }
+
         else
         {
-            std::cout << "Invalid parameter: " << parameter.name << std::endl;
+            spdlog::error("Invalid parameter: {}", parameter.name);
 
             return false;
         }
@@ -95,6 +105,16 @@ bool CommandParser::parse(uint32_t argument_count, const char** argument_list)
     }
 
     return true;
+}
+
+const std::string& CommandParser::get_scene_directory() const
+{
+    return this->scene_directory;
+}
+
+const std::string& CommandParser::get_study_directory() const
+{
+    return this->study_directory;
 }
 
 std::optional<std::string> CommandParser::get_scene_file_name() const

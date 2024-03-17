@@ -1,13 +1,13 @@
 #ifndef HEADER_WORKER
 #define HEADER_WORKER
 
-#include <streaming_server.hpp>
 #include <condition_variable>
 #include <thread>
 #include <mutex>
 #include <vector>
 #include <array>
 
+#include "server.hpp"
 #include "camera.hpp"
 
 struct Frame;
@@ -22,13 +22,10 @@ enum WorkerState
 class WorkerFrame
 {
 public:
-    Frame* frame;
+    Frame* frame = nullptr;
+    LayerData* layer_data = nullptr;
 
-    i3ds::LayerData layer_data;
-    std::array<std::vector<i3ds::Index>, CAMERA_VIEW_COUNT> indices;
-    std::array<std::vector<i3ds::Vertex>, CAMERA_VIEW_COUNT> vertices;
-
-    std::array<bool, CAMERA_VIEW_COUNT> complete;
+    std::array<bool, SHARED_VIEW_COUNT_MAX> complete;
 
 public:
     WorkerFrame() = default;
@@ -47,17 +44,18 @@ private:
     std::condition_variable input_condition;
     std::condition_variable mesh_condition;
 
-    std::vector<WorkerFrame*> input_queue;
-    std::vector<WorkerFrame*> output_queue;
+    std::vector<WorkerFrame*> input_queue;  //Protected by input_mutex
+    std::vector<WorkerFrame*> output_queue; //Protected by output_mutex
 
-    i3ds::StreamingServer* server = nullptr;
-
+    Server* server = nullptr;
     WorkerState state = WORKER_STATE_INACTIVE;
+    uint32_t view_count = 0;
+    bool export_enabled = false;
     
 public:
     WorkerPool() = default;
 
-    bool create(i3ds::StreamingServer* server);
+    bool create(Server* server, uint32_t view_count, bool export_enabled);
     void destroy(std::vector<Frame*>& frames);
 
     void submit(Frame* frame);
@@ -66,6 +64,8 @@ public:
 private:
     void worker_mesh(uint32_t view);
     void worker_submit();
+
+    std::string get_export_file_name(const std::string& request_file_name, uint32_t view);
 };
 
 #endif

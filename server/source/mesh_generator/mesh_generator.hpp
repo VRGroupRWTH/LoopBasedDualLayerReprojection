@@ -12,13 +12,20 @@ enum MeshGeneratorType
     MESH_GENERATOR_TYPE_LOOP_BASED
 };
 
+struct MeshFeatureLine
+{
+    glm::ivec2 start = glm::ivec2(0);
+    glm::ivec2 end = glm::ivec2(0);
+    uint32_t id = 0;
+};
+
 class MeshGeneratorFrame
 {
 public:
     MeshGeneratorFrame() = default;
     virtual ~MeshGeneratorFrame() = default;
     
-    virtual bool triangulate(std::vector<shared::Vertex>& vertices, std::vector<shared::Index>& indices, shared::ViewMetadata& metadata) = 0;
+    virtual bool triangulate(std::vector<shared::Vertex>& vertices, std::vector<shared::Index>& indices, shared::ViewMetadata& metadata, std::vector<MeshFeatureLine>& feature_lines, bool export_feature_lines = false) = 0;
 
     virtual GLuint get_depth_buffer() const = 0;
     virtual GLuint get_normal_buffer() const = 0;

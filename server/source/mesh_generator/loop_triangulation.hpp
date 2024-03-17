@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <types.hpp>
 
+#include "mesh_generator.hpp"
+
 namespace glsl
 {
     using namespace glm;
@@ -95,7 +97,7 @@ public:
     LoopTriangulation() = default;
     ~LoopTriangulation();
 
-    void process(const glm::uvec2& resolution, float triangle_scale, const glsl::Loop* loop_pointer, const glsl::LoopCount* loop_count_pointer, const glsl::LoopSegment* loop_segment_pointer, std::vector<shared::Vertex>& vertices, std::vector<shared::Index>& indices, shared::ViewMetadata& metadata);
+    void process(const glm::uvec2& resolution, float triangle_scale, const glsl::Loop* loop_pointer, const glsl::LoopCount* loop_count_pointer, const glsl::LoopSegment* loop_segment_pointer, std::vector<shared::Vertex>& vertices, std::vector<shared::Index>& indices, shared::ViewMetadata& metadata, std::vector<MeshFeatureLine>& feature_lines, bool export_feature_lines);
 
 private:
     void compute_loop_points(uint32_t segment_count, const glsl::LoopSegment* segment_pointer, std::vector<LoopPoint>& points);
