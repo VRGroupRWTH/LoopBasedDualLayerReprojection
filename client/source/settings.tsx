@@ -1,17 +1,21 @@
 import { Component, Match, Switch, createSignal } from "solid-js";
 import { Form, Row, Col, Button } from "solid-bootstrap";
+import * as Wrapper from "../wrapper/binary/wrapper"
 
-import MainModuleFactory, * as Wrapper from "../wrapper/binary/wrapper"
-
-/*MainModuleFactory().then(wrapper =>
+export type SettingsType = 
 {
-    let a : Wrapper.SessionCreateForm = 
-    {
-        mesh_generator: wrapper.MeshGeneratorType.MESH_GENERATOR_TYPE_LINE         
-    };
+    resolution: number,
+    update_rate: number,
+    scene_scale: number,
+    scene_exposure: number,
+    scene_indirect_intensity: number
+    mesh_generator: Wrapper.MeshGeneratorType,
+    mesh_settings: Wrapper.MeshSettingsForm,
+    video_settings: Wrapper.VideoSettingsForm
+};
 
-    wrapper.build_session_create_packet(a);
-})*/
+
+
 
 const NumberSetting : Component<{label : string, step : number, min : number, max : number}> = (props) =>
 {
@@ -37,22 +41,9 @@ const GeneralSettings : Component = () =>
             <div class="px-2">
                 <NumberSetting label={"Resolution"} step={1} min={256} max={1024}></NumberSetting>
                 <NumberSetting label={"Update Rate"} step={1} min={256} max={1024}></NumberSetting>
-            </div>
-        </div>
-    )
-};
-
-const SceneSettings : Component = () =>
-{
-    return (
-        <div>
-            <div class="border-bottom mb-3">
-                <h4>Scene</h4>
-            </div>
-            <div class="px-2">
-                <NumberSetting label={"Scale"} step={1} min={256} max={1024}></NumberSetting>
-                <NumberSetting label={"Exposure"} step={1} min={256} max={1024}></NumberSetting>
-                <NumberSetting label={"Indirect Intensity"} step={1} min={256} max={1024}></NumberSetting>
+                <NumberSetting label={"Scene Scale"} step={1} min={256} max={1024}></NumberSetting>
+                <NumberSetting label={"Scene Exposure"} step={1} min={256} max={1024}></NumberSetting>
+                <NumberSetting label={"Scene Indirect Intensity"} step={1} min={256} max={1024}></NumberSetting>
             </div>
         </div>
     )
@@ -63,7 +54,7 @@ const VideoSettings : Component = () =>
     return (
         <div>
             <div class="border-bottom mb-3">
-                <h4>Video</h4>
+                <h5>Video</h5>
             </div>
             <div class="px-2">
                 <NumberSetting label={"Chroma-Subsampling"} step={1} min={256} max={1024}></NumberSetting>
@@ -76,13 +67,39 @@ const VideoSettings : Component = () =>
     )
 };
 
-
 const LayerSettings : Component = () =>
 {
-
-
     return (
-        <a></a>
+        <div>
+            <div class="border-bottom mb-3">
+                <h5>Layer</h5>
+            </div>
+            <div class="px-2">
+                <NumberSetting label={"Chroma-Subsampling"} step={1} min={256} max={1024}></NumberSetting>
+                <NumberSetting label={"Mode"} step={1} min={256} max={1024}></NumberSetting>
+                <NumberSetting label={"Frame Rate"} step={1} min={256} max={1024}></NumberSetting>
+                <NumberSetting label={"Bitrate Rate"} step={1} min={256} max={1024}></NumberSetting>
+                <NumberSetting label={"Quality"} step={1} min={256} max={1024}></NumberSetting>
+            </div>
+        </div>
+    )
+};
+
+const MeshSettings : Component = () =>
+{
+    return (
+        <div>
+            <div class="border-bottom mb-3">
+                <h5>Mesh</h5>
+            </div>
+            <div class="px-2">
+                <NumberSetting label={"Chroma-Subsampling"} step={1} min={256} max={1024}></NumberSetting>
+                <NumberSetting label={"Mode"} step={1} min={256} max={1024}></NumberSetting>
+                <NumberSetting label={"Frame Rate"} step={1} min={256} max={1024}></NumberSetting>
+                <NumberSetting label={"Bitrate Rate"} step={1} min={256} max={1024}></NumberSetting>
+                <NumberSetting label={"Quality"} step={1} min={256} max={1024}></NumberSetting>
+            </div>
+        </div>
     )
 };
 
@@ -128,25 +145,40 @@ const LoopSettings : Component = () =>
     )
 };
 
-const Settings : Component<{set_state : (state : string) => void}> = (props) =>
+export type SettingsProps =
 {
-    const [method, set_method] = createSignal("line");
+    wrapper : Wrapper.MainModule,
+    settings : () => SettingsType,
+    set_state : (state : string) => void,
+    set_settings : (settings : SettingsType) => void
+};
 
+export const Settings : Component<SettingsProps> = (props) =>
+{
     return (
         <div>
             <Form>
-                <GeneralSettings></GeneralSettings>
-                <SceneSettings></SceneSettings>
+                <div class="border-bottom mb-3"><h5>General</h5></div>
+                <div class="px-2">
+                    <NumberSetting name="" label={"Resolution"} step={1} min={256} max={1024}></NumberSetting>
+                    <NumberSetting label={"Update Rate"} step={1} min={256} max={1024}></NumberSetting>
+                    <NumberSetting label={"Scene Scale"} step={1} min={256} max={1024}></NumberSetting>
+                    <NumberSetting label={"Scene Exposure"} step={1} min={256} max={1024}></NumberSetting>
+                    <NumberSetting label={"Scene Indirect Intensity"} step={1} min={256} max={1024}></NumberSetting>
+                </div>
                 <VideoSettings></VideoSettings>
-
-
-                <Form.Select class="mb-4" onChange={(event) => set_method(event.target.value)}>
+                <LayerSettings></LayerSettings>
+                <MeshSettings></MeshSettings>
+                <Form.Select class="mb-4" onChange={(event) => {}}>
                     <option value="line">Line Based</option>
                     <option value="loop">Loop Based</option>
                 </Form.Select>
                 <Switch>
-                    <Match when={method() == "line"}>
+                    <Match when={props.settings().mesh_generator == props.wrapper.MeshGeneratorType.MESH_GENERATOR_TYPE_LINE}>
                         <LineSettings></LineSettings>
+                    </Match>
+                    <Match when={props.settings().mesh_generator == props.wrapper.MeshGeneratorType.MESH_GENERATOR_TYPE_LOOP}>
+                        <LoopSettings></LoopSettings>
                     </Match>
                 </Switch>
             </Form>
@@ -157,5 +189,3 @@ const Settings : Component<{set_state : (state : string) => void}> = (props) =>
         </div>
     )
 };
-
-export default Settings;
