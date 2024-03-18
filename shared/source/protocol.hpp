@@ -16,7 +16,6 @@ namespace shared
     //                                                          In case the file already exists, the given information is appended.
     // [POST] /files/<directory_path>/<file_name>?type=image > Writes the given image to the file specified by the directory path and the file name. 
     //                                                          Files and directorys are created if they do not exist. 
-    //                                                          In case the file already exists, the file is overwritten.
     //                                                          The server expects in binary the width (uint32_t), the height (uint32_t) and the content of the image (RGB uint8_t per channel).
     
     enum PacketType : uint32_t
