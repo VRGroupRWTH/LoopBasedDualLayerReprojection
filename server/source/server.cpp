@@ -359,7 +359,7 @@ void Server::process_get_scenes(HttpResponse* response, HttpRequest* request)
 
 void Server::process_get_files(HttpResponse* response, HttpRequest* request)
 {
-    std::filesystem::path request_path = std::filesystem::relative("/files/", request->getFullUrl());
+    std::filesystem::path request_path = std::filesystem::relative(request->getFullUrl(), "/files/");
     std::filesystem::path file_path = std::filesystem::path(this->study_directory) / request_path;
 
     if (!std::filesystem::exists(file_path))
@@ -380,7 +380,9 @@ void Server::process_get_files(HttpResponse* response, HttpRequest* request)
         {
             if (entry.is_regular_file())
             {
-                file_list.push_back(boost::json::string(entry.path().string()));
+                std::filesystem::path entry_path = std::filesystem::canonical(entry.path());
+
+                file_list.push_back(boost::json::string(entry_path.string()));
             }
         }
 
@@ -422,7 +424,7 @@ void Server::process_get_files(HttpResponse* response, HttpRequest* request)
 
 void Server::process_post_files(HttpResponse* response, HttpRequest* request)
 {
-    std::filesystem::path request_path = std::filesystem::relative("/files/", request->getFullUrl());
+    std::filesystem::path request_path = std::filesystem::relative(request->getFullUrl(), "/files/");
     std::filesystem::path file_path = std::filesystem::path(this->study_directory) / request_path;
     std::string_view request_type = request->getQuery("type");
 

@@ -14,15 +14,23 @@ bool CommandParser::parse(uint32_t argument_count, const char** argument_list)
     std::vector<Parameter> parameters;
     std::vector<std::string> flags;
 
-    for (uint32_t index = 1; index < argument_count - 1; index++)
+    for (uint32_t index = 1; index < argument_count; index++)
     {
         std::string argument = argument_list[index];
 
         if (argument.substr(0, 2) != "--")
         {
-            spdlog::error("Invalid argument: {}", argument);
+            if (index == argument_count - 1)
+            {
+                this->scene_file_name = argument_list[argument_count - 1];
+            }
 
-            return false;
+            else
+            {
+                spdlog::error("Invalid argument: {}", argument);
+
+                return false;
+            }
         }
 
         std::size_t offset = argument.find('=');
@@ -97,11 +105,6 @@ bool CommandParser::parse(uint32_t argument_count, const char** argument_list)
 
             return false;
         }
-    }
-
-    if (argument_count > 1)
-    {
-        this->scene_file_name = argument_list[argument_count - 1];
     }
 
     return true;

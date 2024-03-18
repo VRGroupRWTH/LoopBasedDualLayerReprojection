@@ -51,7 +51,7 @@ namespace shared
         String sky_file_name;
         float sky_intensity = 1.0f;
 
-        bool export_enabled = false;
+        std::uint8_t export_enabled = false;
     };
 
     struct SessionDestroyPacket

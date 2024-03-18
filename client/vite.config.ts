@@ -16,7 +16,15 @@ export default defineConfig({
     port: 3000,
     watch: {
       usePolling: true
-    }
+    },
+    proxy: {
+      '/server': {
+           target: 'http://localhost:9000/',
+           changeOrigin: true,
+           secure: false,
+           rewrite: (path) => path.replace(/^\/server/, ''),
+       }
+  }
   },
   build: {
     target: 'esnext',

@@ -1,7 +1,34 @@
 #include "export.hpp"
 #include <spdlog/spdlog.h>
 #include <glm/gtx/range.hpp>
+#include <filesystem>
 #include <fstream>
+
+bool prevent_override(const std::string& file_name)
+{
+	if (!std::filesystem::exists(file_name))
+	{
+		return true;
+	}
+
+	uint32_t index = 1;
+
+	while (true)
+	{
+		std::string backup_name = file_name + ".back" + std::to_string(index);
+
+		if (!std::filesystem::exists(backup_name))
+		{
+			std::filesystem::rename(file_name, backup_name);
+
+			break;
+		}
+
+		index++;
+	}
+
+	return false;
+}
 
 bool export_color_image(const std::string& file_name, const glm::uvec2& resolution, uint8_t* data, uint32_t size)
 {
@@ -10,6 +37,11 @@ bool export_color_image(const std::string& file_name, const glm::uvec2& resoluti
 		spdlog::error("Export: File format not supported!");
 
 		return false;
+	}
+
+	if (!prevent_override(file_name))
+	{
+		spdlog::warn("Export: Would have overwritten file!");
 	}
 
 	std::fstream file(file_name, std::ios::out | std::ios::binary);
@@ -50,6 +82,11 @@ bool export_depth_image(const std::string& file_name, const glm::uvec2& resoluti
 		return false;
 	}
 
+	if (!prevent_override(file_name))
+	{
+		spdlog::warn("Export: Would have overwritten file!");
+	}
+
 	std::fstream file(file_name, std::ios::out | std::ios::binary);
 
 	if (!file.good())
@@ -86,6 +123,11 @@ bool export_mesh(const std::string& file_name, const std::vector<shared::Vertex>
 		spdlog::error("Export: File format not supported!");
 
 		return false;
+	}
+
+	if (!prevent_override(file_name))
+	{
+		spdlog::warn("Export: Would have overwritten file!");
 	}
 
 	std::fstream file(file_name, std::ios::out);
@@ -141,6 +183,11 @@ bool export_feature_lines(const std::string& file_name, const std::vector<MeshFe
 		spdlog::error("Export: File format not supported!");
 
 		return false;
+	}
+
+	if (!prevent_override(file_name))
+	{
+		spdlog::warn("Export: Would have overwritten file!");
 	}
 
 	std::fstream file(file_name, std::ios::out);
