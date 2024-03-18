@@ -164,7 +164,7 @@ void WorkerPool::worker_mesh(uint32_t view)
             {
                 std::string file_name = this->get_export_file_name(export_request.mesh_file_name.value(), view);
 
-                export_mesh(file_name, layer_data->vertices[view], layer_data->indices[view], frame->view_matrix[view], frame->projection_matrix);
+                export_mesh(file_name, layer_data->vertices[view], layer_data->indices[view], frame->view_matrix[view], frame->projection_matrix, frame->resolution);
             }
 
             if (export_request.feature_lines_file_name.has_value())

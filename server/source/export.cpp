@@ -116,7 +116,7 @@ bool export_depth_image(const std::string& file_name, const glm::uvec2& resoluti
 	return true;
 }
 
-bool export_mesh(const std::string& file_name, const std::vector<shared::Vertex>& vertices, const std::vector<shared::Index>& indices, const glm::mat4& view_matrix, const glm::mat4& projection_matrix)
+bool export_mesh(const std::string& file_name, const std::vector<shared::Vertex>& vertices, const std::vector<shared::Index>& indices, const glm::mat4& view_matrix, const glm::mat4& projection_matrix, const glm::uvec2& resolution)
 {
 	if (!file_name.ends_with(".obj"))
 	{
@@ -138,6 +138,8 @@ bool export_mesh(const std::string& file_name, const std::vector<shared::Vertex>
 
 		return false;
 	}
+
+	file << "# resolution " << resolution.x << " " << resolution.y << std::endl;
 
 	// Matrix column major
 	file << "# view_matrix";
