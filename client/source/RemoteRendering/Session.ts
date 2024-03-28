@@ -4,9 +4,9 @@ import FrameDecoder from "./FrameDecoder";
 import GeometryDecoder from "./GeometryDecoder";
 import Layer, { LayerLogData } from "./Layer";
 import Mesh from "./Mesh";
-import Renderer, { FrameData, Mode } from "./Renderer";
-import { MainModule, SessionCreateForm } from "../../wrapper/binary/wrapper";
-import { CONDITION_CHROMA_SUBSAMPLING, CONDITION_FAR_PLANE, CONDITION_FILE_NAME, CONDITION_NEAR_PLANE, CONDITION_RESOLUTION, CONDITION_VIDEO_CODEC, Technique } from "../Conditions";
+import Renderer, { FrameData, Mode, createProjectionMatrix } from "./Renderer";
+import { MainModule, Matrix, SessionCreateForm } from "../../wrapper/binary/wrapper";
+import { CONDITION_CHROMA_SUBSAMPLING, CONDITION_FAR_PLANE, CONDITION_FILE_NAME, CONDITION_NEAR_PLANE, CONDITION_RESOLUTION, CONDITION_VIDEO_CODEC, TIME_BETWEEN_RUNS, Technique } from "../Conditions";
 
 const TIMEOUT = 5 * 60 * 1000;
 const MOUSE_SENSITIVITY = 0.01;
@@ -19,9 +19,18 @@ interface UpdateLogData {
     rtt: number;
 }
 
+export interface SessionConfig {
+    technique: Technique;
+    interval: number;
+    run: number;
+    replayData?: FrameData[];
+    sessionType: "benchmark" | "replay1" | "replay2";
+}
+
 class Session {
     private wrapper: MainModule;
     connection: Connection;
+    private config: SessionConfig;
     private intervalTimer: number;
     private renderer: Renderer;
     private frameDecoders: [FrameDecoder, FrameDecoder];
@@ -34,27 +43,48 @@ class Session {
     private layerLogs: UpdateLogData[] = [];
     private currentReplayFrame = 0;
 
-    constructor(wrapper: MainModule, canvas: HTMLCanvasElement, private technique: Technique, private interval: number, private run: number, private finished: () => void, private replayData?: FrameData[]) {
+    constructor(wrapper: MainModule, canvas: HTMLCanvasElement, config: SessionConfig, private finished: () => void) {
         this.wrapper = wrapper;
-        this.intervalTimer = setInterval(() => this.update(), replayData ? 100 : interval);
+        this.config = config;
+        if (this.config.sessionType === "benchmark") {
+            this.intervalTimer = setInterval(() => this.update(), this.config.interval);
+        } else {
+            setTimeout(() => this.update(), TIME_BETWEEN_RUNS);
+        }
+
+        const projectionMatrix = mat4.create();
+
+        if (this.config.sessionType === "replay2") {
+            mat4.copy(
+                projectionMatrix,
+                createProjectionMatrix(Math.floor(canvas.clientWidth), Math.floor(canvas.clientHeight))
+            );
+        } else {
+            mat4.perspective(projectionMatrix, Math.PI / 2, 1.0, 0.1, 1000.0);
+        }
+
+        let layerCount = 1;
+        if (this.config.technique.name === "dual-layer" && this.config.sessionType !== "replay2") {
+            layerCount = 2;
+        }
 
         // Connecion setup
         this.settings = {
             mesh_generator: this.wrapper.MeshGeneratorType.MESH_GENERATOR_TYPE_LINE,
             video_codec: this.wrapper.VideoCodecType.VIDEO_CODEC_TYPE_H264,
             video_use_chroma_subsampling: CONDITION_CHROMA_SUBSAMPLING ? 1 : 0,
-            projection_matrix: mat4.perspective(mat4.create(), Math.PI / 2, 1.0, 0.1, 1000.0),
+            projection_matrix: projectionMatrix as Matrix,
             resolution_width: CONDITION_RESOLUTION,
             resolution_height: CONDITION_RESOLUTION,
-            layer_count: 1,
-            view_count: 6,
+            layer_count: layerCount,
+            view_count: this.config.sessionType === "replay2" ? 1 : 6,
             scene_file_name: CONDITION_FILE_NAME,
             scene_scale: 1.0,
             scene_exposure: 1.0,
             scene_indirect_intensity: 1.0,
             sky_file_name: "",
             sky_intensity: 1.0,
-            export_enabled: !!replayData,
+            export_enabled: false,// this.config.sessionType === "replay1",
         }
         this.connection = new Connection(wrapper, this.settings);
         this.connection.onConnect = () => {
@@ -63,6 +93,11 @@ class Session {
             const layerInfo = response.layerInfo;
 
             this.connection.info(`received update for ${layerInfo.request_id}`);
+
+            if (this.config.sessionType === "replay2") {
+                // ignore the update!
+                return;
+            }
 
             let mesh = this.inFlightMeshes.get(layerInfo.request_id);
             if (!mesh) {
@@ -82,7 +117,7 @@ class Session {
             // a.click();
         };
 
-        this.renderer = new Renderer(canvas, technique, interval, run, this.connection, finished, !!replayData);
+        this.renderer = new Renderer(canvas, this.config, this.connection, finished);
 
         // Video decoder setup
         this.frameDecoders = [
@@ -126,27 +161,37 @@ class Session {
     }
 
     update() {
-        if (this.replayData) {
-            if (this.currentReplayFrame >= this.replayData.length) {
-                this.finished();
-                return;
-            }
-            const frame = this.replayData[this.currentReplayFrame];
-            if (this.renderer.mesh?.requestId !== frame.requestId) {
-                if (this.requestTimes.get(frame.requestId) === undefined) {
-                    this.connection.requestWithId(frame.srcPosition, frame.requestId);
-                    this.requestTimes.set(frame.requestId, performance.now());
-                    console.log(frame.srcPosition);
-                }
-            } else {
-                this.renderer.setCameraTransform(frame.dstPosition, frame.dstOrientation);
-                this.renderer.renderFrame();
-                this.currentReplayFrame++;
-            }
-        } else {
+        if (this.config.sessionType === "benchmark") {
             console.log(this.renderer.getPosition());
             const requestId = this.connection.request(this.renderer.getPosition());
             this.requestTimes.set(requestId, performance.now());
+        } else if (this.config.replayData) {
+            if (this.currentReplayFrame >= this.config.replayData.length) {
+                this.finished();
+                return;
+            }
+            const frame = this.config.replayData[this.currentReplayFrame];
+
+            if (this.config.sessionType === "replay1") {
+                if (this.renderer.mesh?.requestId !== frame.requestId) { // Do we need a new mesh?
+                    if (this.requestTimes.get(frame.requestId) === undefined) { // Was the mesh already been requested?
+                        this.connection.requestWithId(frame.srcPosition, frame.requestId);
+                        this.requestTimes.set(frame.requestId, performance.now());
+                        console.log(frame.srcPosition);
+                    }
+                    setTimeout(() => this.update(), 100); // give the server some time to generate the mesh!
+                } else {
+                    this.renderer.setCameraTransform(frame.dstPosition, frame.dstOrientation);
+                    this.renderer.renderFrame();
+                    this.currentReplayFrame++;
+                    setTimeout(() => this.update(), 5); // here we can go faster
+                }
+            } else if (this.config.sessionType === "replay2") {
+                this.connection.requestWithId(frame.dstPosition, frame.requestId);
+                console.log(frame.dstPosition);
+                this.currentReplayFrame++;
+                setTimeout(() => this.update(), 100); // give the server some time
+            }
         }
     }
 
@@ -156,7 +201,7 @@ class Session {
         this.connection.disconnect();
         this.renderer.destroy();
 
-        fetch(`http://${SERVER_URL}/files/${this.technique.name}/${this.interval}/${this.run}-updates.json?type=log`, {
+        fetch(`http://${SERVER_URL}/files/${this.config.technique.name}/${this.config.interval}/${this.config.run}-updates.json?type=log`, {
             method: 'POST',
             body: JSON.stringify(this.layerLogs),
             mode: 'no-cors',

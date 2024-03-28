@@ -7,8 +7,9 @@ import { CONDITION_INTERVALS, CONDITION_TECHNIQUES, REPITIONS, Technique } from 
 import { useParams } from "@solidjs/router";
 import { SERVER_URL } from "./RemoteRendering/Connection";
 import { FrameData } from "./RemoteRendering/Renderer";
+import { SessionConfig } from "./RemoteRendering/Session";
 
-const CaptureReplay: Component<{ wrapper: MainModule }> = (props) => {
+const Replay: Component<{ wrapper: MainModule, sessionType: "replay1" | "replay2" }> = (props) => {
 	const params = useParams();
 
 	const filename = createMemo(() => {
@@ -21,6 +22,22 @@ const CaptureReplay: Component<{ wrapper: MainModule }> = (props) => {
 		return response.json();
 	});
 
+	const config = createMemo((): SessionConfig|undefined => {
+		const replayData = data();
+
+		if (!data) {
+			return undefined;
+		} else {
+			return {
+				technique: CONDITION_TECHNIQUES.find(t => t.name === params.technique) as Technique,
+				interval: parseInt(params.interval),
+				run: parseInt(params.run),
+				sessionType: props.sessionType,
+				replayData: replayData,
+			};
+		}
+	});
+
 	const [completed, setCompleted] = createSignal(false);
 
 	return (
@@ -31,21 +48,18 @@ const CaptureReplay: Component<{ wrapper: MainModule }> = (props) => {
 			<Match when={completed()}>
 				<>Complete...</>
 			</Match>
-			<Match when={data()}>
+			<Match when={config()}>
 				{
-					data =>
-					<RemoteRendering
-						technique={CONDITION_TECHNIQUES.find(t => t.name === params.technique) as Technique}
-						interval={parseInt(params.interval)}
-						repetition={parseInt(params.run)}
-						wrapper={props.wrapper}
-						finished={() => setCompleted(true)}
-						replayData={data()}
-					/>
+					config =>
+						<RemoteRendering
+							config={config()}
+							wrapper={props.wrapper}
+							finished={() => setCompleted(true)}
+						/>
 				}
 			</Match>
 		</Switch>
 	);
 };
 
-export default CaptureReplay;
+export default Replay;

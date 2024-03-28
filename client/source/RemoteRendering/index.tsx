@@ -1,16 +1,13 @@
 import { Component, createEffect, createSignal, onCleanup } from "solid-js";
 
 import * as Wrapper from "../../wrapper/binary/wrapper"
-import Session from "./Session";
+import Session, { SessionConfig } from "./Session";
 import { TIME_BETWEEN_RUNS, Technique } from "../Conditions";
 import { FrameData } from "./Renderer";
 
 const RemoteRendering: Component<{
     wrapper: Wrapper.MainModule,
-    interval: number,
-    technique: Technique,
-    repetition: number,
-    replayData?: FrameData[],
+    config: SessionConfig,
     finished: () => void,
 }> = (props) => {
     const [session, setSession] = createSignal<Session>();
@@ -22,12 +19,10 @@ const RemoteRendering: Component<{
             return;
         }
 
-        const i = props.interval;
-        const t = props.technique;
-        const r = props.repetition;
-
+        // we need to save this here as the simeout runs async
+        const config = props.config;
         let to = setTimeout(() => {
-            setSession(new Session(props.wrapper, c, t, i, r, props.finished, props.replayData));
+            setSession(new Session(props.wrapper, c, config, props.finished));
             to = -1;
         }, TIME_BETWEEN_RUNS);
 

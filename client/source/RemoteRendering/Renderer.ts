@@ -5,6 +5,7 @@ import meshVertexShaderSource from "./Mesh.vert?raw";
 import { ShaderPogram, createShaderProgram } from "./ShaderProgram";
 import Connection, { SERVER_URL } from "./Connection";
 import { ANIMATION, CONDITION_FAR_PLANE, CONDITION_NEAR_PLANE, Technique } from "../Conditions";
+import { SessionConfig } from "./Session";
 
 export interface FrameData {
     requestId: number,
@@ -13,6 +14,25 @@ export interface FrameData {
     srcPosition: vec3,
     dstPosition: vec3,
     dstOrientation: quat,
+}
+
+export function createProjectionMatrix(w: number, h: number) {
+    // Do not use mat4.perspective because it assumes a right handed coordinate system.
+    const projectionMatrix = mat4.create();
+    const fovY = Math.PI * 0.5;
+    const tanFovY = Math.tan(fovY * 0.5);
+    const aspect = w / h;
+    const f = CONDITION_NEAR_PLANE;
+    const n = CONDITION_FAR_PLANE;
+    const fn = 1.0 / (f - n);
+    mat4.set(
+        projectionMatrix,
+        1.0 / (aspect * tanFovY), 0.0, 0.0, 0.0,
+        0.0, 1.0 / tanFovY, 0.0, 0.0,
+        0.0, 0.0, (f+n) * fn, 1.0,
+        0.0, 0.0, -2.0 * f * n * fn, 0.0
+    );
+    return projectionMatrix;
 }
 
 class Renderer {
@@ -31,7 +51,7 @@ class Renderer {
     isFinished = false;
     frame = 0;
 
-    constructor(canvas: HTMLCanvasElement, private technique: Technique, private interval: number, private run: number, private connection: Connection, finished: () => void, private replaying?: boolean) {
+    constructor(canvas: HTMLCanvasElement, private sessionConfig: SessionConfig, private connection: Connection, finished: () => void) {
         const gl = canvas.getContext('webgl2');
         if (!gl) {
             throw new Error("failed to create WebGL2 context");
@@ -39,7 +59,8 @@ class Renderer {
         this.canvas = canvas;
         this.gl = gl;
         this.program = createShaderProgram(this.gl, meshVertexShaderSource, meshFragmentShaderSource);
-        this.animationFrameRequest = replaying ? -1 : requestAnimationFrame(() => this.onDesktopAnimationFrame());
+        // only automatically render when benchmarking noch when replaying
+        this.animationFrameRequest = this.sessionConfig.sessionType === "benchmark" ? requestAnimationFrame(() => this.onDesktopAnimationFrame()) : -1;
         this.finished = finished;
     }
 
@@ -58,6 +79,9 @@ class Renderer {
     }
 
     onDesktopAnimationFrame() {
+        if (this.isFinished) {
+            return;
+        }
         this.animationFrameRequest = requestAnimationFrame(() => this.onDesktopAnimationFrame());
 
         if (this.mesh) {
@@ -69,13 +93,9 @@ class Renderer {
                 console.log("animation finished");
                 this.finished();
                 this.isFinished = true;
-                // console.log(JSON.stringify(this.frameData));
-                // const dateString = new Date().toISOString().replaceAll(':','-');
-                // console.log(dateString);
-                fetch(`http://${SERVER_URL}/files/${this.technique.name}/${this.interval}/${this.run}-rendering.json?type=log`, {
+                fetch(`http://${SERVER_URL}/files/${this.sessionConfig.technique.name}/${this.sessionConfig.interval}/${this.sessionConfig.run}-rendering.json?type=log`, {
                     method: 'POST',
                     body: JSON.stringify(this.frameData),
-                    mode: 'no-cors',
                 });
                 return;
             }
@@ -120,23 +140,8 @@ class Renderer {
                 this.canvas.height = Math.floor(this.canvas.clientHeight);
             }
 
+        const projectionMatrix = createProjectionMatrix(this.canvas.width, this.canvas.height);
         this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-
-        // Do not use mat4.perspective because it assumes a right handed coordinate system.
-        const projectionMatrix = mat4.create();
-        const fovY = Math.PI * 0.5;
-        const tanFovY = Math.tan(fovY * 0.5);
-        const aspect = this.canvas.width / this.canvas.height;
-        const f = CONDITION_NEAR_PLANE;
-        const n = CONDITION_FAR_PLANE;
-        const fn = 1.0 / (f - n);
-        mat4.set(
-            projectionMatrix,
-            1.0 / (aspect * tanFovY), 0.0, 0.0, 0.0,
-            0.0, 1.0 / tanFovY, 0.0, 0.0,
-            0.0, 0.0, (f+n) * fn, 1.0,
-            0.0, 0.0, -2.0 * f * n * fn, 0.0
-        );
         this.preRender();
         this.renderView(projectionMatrix);
         this.postRender();
@@ -179,7 +184,7 @@ class Renderer {
     }
 
     postRender() {
-        if (this.replaying) {
+        if (this.sessionConfig.sessionType === "replay1") {
             const w = this.canvas.width;
             const h = this.canvas.height;
             const buffer = new Uint8Array(w * h * 4);
@@ -199,7 +204,7 @@ class Renderer {
                     pixels[dstOffset + 2] = buffer[srcOffset + 2];
                 }
             }
-            fetch(`http://${SERVER_URL}/files/${this.technique.name}/${this.interval}/replay/frame${this.frame}.ppm?type=image`, {
+            fetch(`http://${SERVER_URL}/files/${this.sessionConfig.technique.name}/${this.sessionConfig.interval}/${this.sessionConfig.run}/frame${this.frame}.ppm?type=image`, {
                 method: 'POST',
                 body: image,
             });
