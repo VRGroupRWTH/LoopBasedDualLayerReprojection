@@ -600,10 +600,10 @@
   resolved "https://registry.npmjs.org/@solid-primitives/utils/-/utils-6.2.1.tgz"
   integrity sha512-TsecNzxiO5bLfzqb4OOuzfUmdOROcssuGqgh5rXMMaasoFZ3GoveUgdY1wcf17frMJM7kCNGNuK34EjErneZkg==
 
-"@solidjs/router@^0.10.5":
-  version "0.10.5"
-  resolved "https://registry.npmjs.org/@solidjs/router/-/router-0.10.5.tgz"
-  integrity sha512-gxDeiyc97j8/UqzuuasZsQYA7jpmlwjkfpcay11Q2xfzoKR50eBM1AaxAPtf0MlBAdPsdPV3h/k8t5/XQCuebA==
+"@solidjs/router@^0.13.1":
+  version "0.13.1"
+  resolved "https://registry.yarnpkg.com/@solidjs/router/-/router-0.13.1.tgz#91894f1f3d2458fd5dfeb2ca80898b8d4de13cb4"
+  integrity sha512-Rz5Lf0ssWMuN+Wm2GFO0vwZoO/KSwYFSuCUzWrRAvje5M0ZYZrMk5FZxuzdJT+zg8KuqWJQlRALks5E0r+FjAA==
 
 "@thisbeyond/solid-dnd@^0.7.5":
   version "0.7.5"

@@ -4,7 +4,7 @@ import FrameDecoder from "./FrameDecoder";
 import GeometryDecoder from "./GeometryDecoder";
 import Layer, { LayerLogData } from "./Layer";
 import Mesh from "./Mesh";
-import Renderer, { Mode } from "./Renderer";
+import Renderer, { FrameData, Mode } from "./Renderer";
 import { MainModule, SessionCreateForm } from "../../wrapper/binary/wrapper";
 import { CONDITION_CHROMA_SUBSAMPLING, CONDITION_FAR_PLANE, CONDITION_FILE_NAME, CONDITION_NEAR_PLANE, CONDITION_RESOLUTION, CONDITION_VIDEO_CODEC, Technique } from "../Conditions";
 
@@ -32,10 +32,11 @@ class Session {
     private startTime?: number;
     private settings: SessionCreateForm;
     private layerLogs: UpdateLogData[] = [];
+    private currentReplayFrame = 0;
 
-    constructor(wrapper: MainModule, canvas: HTMLCanvasElement, private technique: Technique, private interval: number, repetition: number, finished: () => void) {
+    constructor(wrapper: MainModule, canvas: HTMLCanvasElement, private technique: Technique, private interval: number, private run: number, private finished: () => void, private replayData?: FrameData[]) {
         this.wrapper = wrapper;
-        this.intervalTimer = setInterval(() => this.update(), 1000 / interval);
+        this.intervalTimer = setInterval(() => this.update(), replayData ? 100 : interval);
 
         // Connecion setup
         this.settings = {
@@ -53,7 +54,7 @@ class Session {
             scene_indirect_intensity: 1.0,
             sky_file_name: "",
             sky_intensity: 1.0,
-            export_enabled: false,
+            export_enabled: !!replayData,
         }
         this.connection = new Connection(wrapper, this.settings);
         this.connection.onConnect = () => {
@@ -81,7 +82,7 @@ class Session {
             // a.click();
         };
 
-        this.renderer = new Renderer(canvas, technique, interval, this.connection, finished);
+        this.renderer = new Renderer(canvas, technique, interval, run, this.connection, finished, !!replayData);
 
         // Video decoder setup
         this.frameDecoders = [
@@ -125,9 +126,28 @@ class Session {
     }
 
     update() {
-        console.log(this.renderer.getPosition());
-        const requestId = this.connection.request(this.renderer.getPosition());
-        this.requestTimes.set(requestId, performance.now());
+        if (this.replayData) {
+            if (this.currentReplayFrame >= this.replayData.length) {
+                this.finished();
+                return;
+            }
+            const frame = this.replayData[this.currentReplayFrame];
+            if (this.renderer.mesh?.requestId !== frame.requestId) {
+                if (this.requestTimes.get(frame.requestId) === undefined) {
+                    this.connection.requestWithId(frame.srcPosition, frame.requestId);
+                    this.requestTimes.set(frame.requestId, performance.now());
+                    console.log(frame.srcPosition);
+                }
+            } else {
+                this.renderer.setCameraTransform(frame.dstPosition, frame.dstOrientation);
+                this.renderer.renderFrame();
+                this.currentReplayFrame++;
+            }
+        } else {
+            console.log(this.renderer.getPosition());
+            const requestId = this.connection.request(this.renderer.getPosition());
+            this.requestTimes.set(requestId, performance.now());
+        }
     }
 
     close() {
@@ -136,9 +156,7 @@ class Session {
         this.connection.disconnect();
         this.renderer.destroy();
 
-        const dateString = new Date().toISOString().replaceAll(':','-');
-        console.log(dateString);
-        fetch(`http://${SERVER_URL}/files/${this.technique.name}/${1000 / this.interval}/updates-${dateString}.json?type=log`, {
+        fetch(`http://${SERVER_URL}/files/${this.technique.name}/${this.interval}/${this.run}-updates.json?type=log`, {
             method: 'POST',
             body: JSON.stringify(this.layerLogs),
             mode: 'no-cors',

@@ -3,12 +3,14 @@ import { Component, createEffect, createSignal, onCleanup } from "solid-js";
 import * as Wrapper from "../../wrapper/binary/wrapper"
 import Session from "./Session";
 import { TIME_BETWEEN_RUNS, Technique } from "../Conditions";
+import { FrameData } from "./Renderer";
 
 const RemoteRendering: Component<{
     wrapper: Wrapper.MainModule,
     interval: number,
     technique: Technique,
     repetition: number,
+    replayData?: FrameData[],
     finished: () => void,
 }> = (props) => {
     const [session, setSession] = createSignal<Session>();
@@ -25,7 +27,7 @@ const RemoteRendering: Component<{
         const r = props.repetition;
 
         let to = setTimeout(() => {
-            setSession(new Session(props.wrapper, c, t, i, r, props.finished));
+            setSession(new Session(props.wrapper, c, t, i, r, props.finished, props.replayData));
             to = -1;
         }, TIME_BETWEEN_RUNS);
 

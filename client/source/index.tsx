@@ -6,12 +6,20 @@ import {Settings, SettingsType} from "./settings";
 import * as Wrapper from "../wrapper/binary/wrapper"
 import Benchmark from "./Benchmark";
 import { glMatrix } from "gl-matrix";
+import { Route, Router } from "@solidjs/router";
+import CaptureReplay from "./CaptureReplay";
 
 
 const App : Component<{wrapper : Wrapper.MainModule}> = (props) =>
 {
     glMatrix.setMatrixArrayType(Array);
-    return <Benchmark wrapper={props.wrapper} />;
+
+    return (
+        <Router>
+            <Route path="/benchmark" component={() => <Benchmark wrapper={props.wrapper} />} />
+            <Route path="/capture-replay/:technique/:interval/:run" component={() => <CaptureReplay wrapper={props.wrapper} />} />
+        </Router>
+    );
     // const default_settings : SettingsType =
     // {
     //     resolution: 1024,

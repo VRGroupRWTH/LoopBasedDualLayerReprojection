@@ -16,7 +16,7 @@
     "vite-plugin-solid": "^2.7.0"
   },
   "dependencies": {
-    "@solidjs/router": "^0.10.5",
+    "@solidjs/router": "^0.13.1",
     "@thisbeyond/solid-dnd": "^0.7.5",
     "gl-matrix": "^3.4.3",
     "solid-bootstrap": "^1.0.19",

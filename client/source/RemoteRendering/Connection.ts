@@ -4,7 +4,7 @@ import { mat4, vec3 } from "gl-matrix";
 import { LayerResponseForm, MainModule, MeshSettingsForm, SessionCreateForm, VideoSettingsForm } from "../../wrapper/binary/wrapper";
 
 // const SERVER_URL = "wss://bugwright.vr.rwth-aachen.de/interactive-3d-streaming/ws";
-export const SERVER_URL = "localhost:9000";
+export const SERVER_URL = "localhost:3000/server";
 
 // http://www.cse.yorku.ca/~oz/hash.html
 function djb2(str: string): number {
@@ -131,6 +131,13 @@ class Connection {
     }
 
     request(p: vec3): number {
+        const requestedId = this.requestId;
+        this.requestWithId(p, requestedId);
+        this.requestId++;
+        return requestedId;
+    }
+
+    requestWithId(p: vec3, id: number) {
         if (this.socket.readyState === this.socket.OPEN) {
             const viewMatrices = [
                 mat4.create(),
@@ -170,16 +177,12 @@ class Connection {
             // mat4.rotateX(v5, v5, -Math.PI * 0.5);
             // mat4.translate(v5, v5, p);
 
-            this.socket.send(this.wrapper.build_render_request_packet({
-                request_id: this.requestId,
-                export_file_names: ["asd", "asd", "asd", "asd"],
+            this.sendPacket(this.wrapper.build_render_request_packet({
+                request_id: id,
+                export_file_names: ["asd1", "asd2", "asd3", "asd4"],
                 view_matrices: viewMatrices,
-
             }));
         }
-        const requestedId = this.requestId;
-        this.requestId++;
-        return requestedId;
     }
 
     changeVideoCompressionSettings(settings: VideoSettingsForm) {

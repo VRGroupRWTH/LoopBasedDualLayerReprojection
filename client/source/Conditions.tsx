@@ -4,7 +4,7 @@ export interface Technique {
 	name: string;
 }
 
-export const CONDITION_INTERVALS = [0.5, 1.0, 2.0];
+export const CONDITION_INTERVALS = [500, 1000, 2000];
 export const CONDITION_TECHNIQUES: Technique[] = [
 	{
 		name: 'ming',

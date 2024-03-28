@@ -3,7 +3,6 @@ import solidPlugin from 'vite-plugin-solid';
 // import devtools from 'solid-devtools/vite';
 
 export default defineConfig({
-  base: '/loop-based-dual-layer-reprojection',
   plugins: [
     /* 
     Uncomment the following line to enable solid-devtools.
@@ -23,6 +22,7 @@ export default defineConfig({
            changeOrigin: true,
            secure: false,
            rewrite: (path) => path.replace(/^\/server/, ''),
+           ws: true,
        }
   }
   },
