@@ -1,22 +1,24 @@
-console.log("hello form worker");
-import createARStreamingLib from "../../lib/build/ar-streaming-lib";
-createARStreamingLib().then(streamingLib => {
+import * as Wrapper from "../../wrapper/binary/wrapper";
+
+Wrapper.default().then(wrapper => {
     addEventListener("message", event => {
-        const result = streamingLib.decodeGeometry(event.data.data);
-        if (result) {
+        const t0 = performance.now();
+        const result = wrapper.decode_geoemtry(event.data.data);
+        if (result.success) {
+            const t1 = performance.now();
             // There are two options to transfer data from emscripten
             // If you comment in another alternative, make sure to also change it in the lib.cpp
             // OPTION A
-            const vertices = new Uint8Array(result.vertices.buffer);
-            const indices = new Uint8Array(result.indices.buffer);
+            const vertices = result.vertices as Uint8Array;
+            const indices = result.indices as Uint8Array;
             postMessage({
                 requestId: event.data.requestId,
                 layerIndex: event.data.layerIndex,
                 decodeInitiationTime: event.data.decodeInitiationTime,
-                rawDecodeTime: result.rawDecodeTime,
+                rawDecodeTime: t1 - t0,
                 vertices: vertices,
                 indices: indices,
-            }, [result.vertices.buffer, result.indices.buffer]);
+            }, [indices.buffer, vertices.buffer]);
 
             // OPTION B
             // const vertices = new Uint8Array(streamingLib.HEAPU8.buffer, result.verticesPointer, result.verticesByteLength);

@@ -1,6 +1,7 @@
 import { mat4, vec3 } from "gl-matrix";
 import Array6 from "./Array6";
 import { ShaderPogram } from "./ShaderProgram";
+import { LayerResponseForm, ViewMetadataArray } from "../../wrapper/binary/wrapper";
 
 export function throwOnNull<T>(value: T | null) {
     if (!value) {
@@ -13,6 +14,17 @@ const INITIAL_BUFFER_CAPACITY = 1024 * 1024;
 const MIN_FILTER = WebGL2RenderingContext.LINEAR;
 const MAG_FILTER = WebGL2RenderingContext.LINEAR;
 
+export interface LayerLogData {
+    response: LayerResponseForm
+    time_image_decode: number;
+    time_geometry_decode: number;
+    time_geometry_decode_raw: number;
+    time_vertex_upload: number,
+    time_index_upload: number,
+    time_texture_upload: number,
+    time_vao_creation: number,
+}
+
 class Layer {
     private indexBufferCapacity = INITIAL_BUFFER_CAPACITY;
     private indexBuffer: WebGLBuffer;
@@ -21,7 +33,7 @@ class Layer {
     private vertexCounts: Array6<number> = [0, 0, 0, 0, 0, 0];
     private indexCounts: Array6<number> = [0, 0, 0, 0, 0, 0];
     private layerClipToView = mat4.create();
-    private layerViewToWorld: Array6<mat4> = [mat4.create(), mat4.create(), mat4.create(), mat4.create(), mat4.create(), mat4.create()];
+    public layerViewToWorld: Array6<mat4> = [mat4.create(), mat4.create(), mat4.create(), mat4.create(), mat4.create(), mat4.create()];
     private leftToRightHanded = mat4.create();
     private vertexArrays: Array6<WebGLVertexArrayObject>;
     private geometryUpaded = false;
@@ -49,7 +61,7 @@ class Layer {
 
     private texturesUpdated = false;
 
-    statistics: {[key: string]: any} = {};
+    logData?: LayerLogData;
 
     constructor(
         private gl: WebGL2RenderingContext,
@@ -148,7 +160,7 @@ class Layer {
         return this.geometryUpaded && this.texturesUpdated;
     }
 
-    reset(indexCounts: Array6<number>, vertexCounts: Array6<number>, viewMatrices: Array6<mat4>, statistics: {[key: string]: any}) {
+    reset(indexCounts: Array6<number>, vertexCounts: Array6<number>, viewMatrices: Array6<mat4>, response: LayerResponseForm) {
         if (this.geometryUpaded || this.texturesUpdated) {
             throw new Error("could not reset layer, it must be invalidated first");
         }
@@ -157,11 +169,15 @@ class Layer {
         for (let i = 0; i < 6; ++i) {
             mat4.invert(this.layerViewToWorld[i], viewMatrices[i])
         }
-        this.statistics = statistics;
-    }
-
-    addStatistic(key: string, value: any) {
-        this.statistics[key] = value;
+        this.logData = {
+            response,
+            time_geometry_decode: -1,
+            time_image_decode: -1,
+            time_index_upload: -1,
+            time_texture_upload: -1,
+            time_vao_creation: -1,
+            time_vertex_upload: -1,
+        }
     }
 
     invalidate() {
@@ -225,11 +241,12 @@ class Layer {
         this.geometryUpaded = true;
 
         const end = performance.now();
-        this.addStatistic("indicesSize", indices.byteLength);
-        this.addStatistic("verticesSize", vertices.byteLength);
-        this.addStatistic("indexUpload", beforeVertexUpload - beforeIndexUpload);
-        this.addStatistic("vertexUpload", beforeVertexArrayCreation - beforeVertexUpload);
-        this.addStatistic("vertexArrayCreation", end - beforeVertexArrayCreation);
+        if (!this.logData) {
+            throw Error("should not happen");
+        }
+        this.logData.time_index_upload = beforeVertexUpload - beforeIndexUpload;
+        this.logData.time_vertex_upload = beforeVertexArrayCreation - beforeVertexUpload;
+        this.logData.time_vao_creation = end - beforeVertexArrayCreation;
     }
 
     uploadTexture(frame: VideoFrame) {
@@ -258,8 +275,10 @@ class Layer {
         this.gl.texSubImage2D(this.gl.TEXTURE_2D, 0, 0, 0, this.uv_width, this.uv_height, this.gl.RED, this.gl.UNSIGNED_BYTE, v);
 
         const after = performance.now();
-        this.addStatistic("textureUpload", after - before);
-        // console.log(`texture upload: ${after - before}`);
+        if (!this.logData) {
+            throw Error("should not happen");
+        }
+        this.logData.time_texture_upload = after - before;
         this.texturesUpdated = true;
     }
 

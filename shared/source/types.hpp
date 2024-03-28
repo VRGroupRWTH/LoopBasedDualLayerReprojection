@@ -31,10 +31,10 @@ namespace shared
 
     enum ExportTypes : uint32_t
     {
-        EXPORT_TYPE_COLOR         = 0x01,
-        EXPORT_TYPE_DEPTH         = 0x02,
-        EXPORT_TYPE_MESH          = 0x03,
-        EXPORT_TYPE_FEATURE_LINES = 0x04
+        EXPORT_TYPE_COLOR         = 0x00,
+        EXPORT_TYPE_DEPTH         = 0x01,
+        EXPORT_TYPE_MESH          = 0x02,
+        EXPORT_TYPE_FEATURE_LINES = 0x03,
     };
 
     typedef uint32_t Index;

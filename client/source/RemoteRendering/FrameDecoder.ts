@@ -1,4 +1,4 @@
-import { VideoCodec } from "../../lib/build/ar-streaming-lib";
+// import { VideoCodec } from "../../lib/build/ar-streaming-lib";
 
 export interface DecodedFrame {
     requestId: number;
@@ -12,7 +12,7 @@ class FrameDecoder {
     private decodingStartTimes = new Map<number, number>();
     onFrameDecoded?: (decodedFrame: DecodedFrame) => void;
 
-    constructor(private codec: VideoCodec) {
+    constructor(private codec: "h264") {
         this.videoDecoder = new VideoDecoder({
             output: frame => {
                 const decodingEndTime = performance.now();

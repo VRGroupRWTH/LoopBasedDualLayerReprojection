@@ -105,9 +105,6 @@ const MeshSettings : Component = () =>
 
 const LineSettings : Component = () =>
 {
-
-
-
     return (
         <div>
             <Form.Group as={Row} class="mb-2">
@@ -160,7 +157,7 @@ export const Settings : Component<SettingsProps> = (props) =>
             <Form>
                 <div class="border-bottom mb-3"><h5>General</h5></div>
                 <div class="px-2">
-                    <NumberSetting name="" label={"Resolution"} step={1} min={256} max={1024}></NumberSetting>
+                    <NumberSetting label={"Resolution"} step={1} min={256} max={1024} value={props.settings().resolution}></NumberSetting>
                     <NumberSetting label={"Update Rate"} step={1} min={256} max={1024}></NumberSetting>
                     <NumberSetting label={"Scene Scale"} step={1} min={256} max={1024}></NumberSetting>
                     <NumberSetting label={"Scene Exposure"} step={1} min={256} max={1024}></NumberSetting>

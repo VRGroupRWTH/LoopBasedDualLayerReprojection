@@ -220,7 +220,7 @@ void Server::process_upgrade(HttpResponse* response, HttpRequest* request, Socke
     if (this->web_socket != nullptr)
     {
         spdlog::error("Server: Already connected!");
-
+        response->writeStatus("529 Site is overloaded")->end();
         return;
     }
 
@@ -424,7 +424,7 @@ void Server::process_get_files(HttpResponse* response, HttpRequest* request)
 
 void Server::process_post_files(HttpResponse* response, HttpRequest* request)
 {
-    std::filesystem::path request_path = std::filesystem::relative(request->getFullUrl(), "/files/");
+    std::filesystem::path request_path = std::filesystem::relative(request->getUrl(), "/files/");
     std::filesystem::path file_path = std::filesystem::path(this->study_directory) / request_path;
     std::string_view request_type = request->getQuery("type");
 

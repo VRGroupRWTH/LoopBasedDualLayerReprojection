@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include "../../shared/source/protocol.hpp"
+#include "../../shared/source/geometry_codec.hpp"
 
 struct MeshSettings
 {
@@ -240,11 +241,35 @@ LayerResponseForm parse_layer_response_packet(emscripten::val data)
     return form;
 }
 
-void decode_geoemtry(emscripten::val data)
+struct DecodeGeometryResult {
+    bool success;
+    emscripten::val indices;
+    emscripten::val vertices;
+};
+
+DecodeGeometryResult decode_geoemtry(emscripten::val data)
 {
     const std::vector<uint8_t> array = emscripten::convertJSArrayToNumberVector<uint8_t>(data);
 
-    //TODO:
+    std::vector<shared::Index> indices;
+    std::vector<shared::Vertex> vertices;
+    if (shared::GeometryCodec::decode(array, indices, vertices)) {
+        emscripten::val indices_view = emscripten::val(emscripten::typed_memory_view(sizeof(shared::Index) * indices.size(), (uint8_t*)indices.data()));
+        emscripten::val indices_array = emscripten::val::global("Uint8Array").new_(indices_view);
+        
+        emscripten::val vertices_view = emscripten::val(emscripten::typed_memory_view(sizeof(shared::Vertex) * vertices.size(), (uint8_t*)vertices.data()));
+        emscripten::val vertices_array = emscripten::val::global("Uint8Array").new_(vertices_view);
+
+        return {
+            .success = true,
+            .indices = indices_array,
+            .vertices = vertices_array,
+        };
+    } else {
+        return {
+            .success = false,
+        };
+    }
 }
 
 EMSCRIPTEN_BINDINGS(wrapper) 
@@ -403,6 +428,11 @@ EMSCRIPTEN_BINDINGS(wrapper)
         .field("view_matrices", &LayerResponseForm::view_matrices)
         .field("vertex_counts", &LayerResponseForm::vertex_counts)
         .field("index_counts", &LayerResponseForm::index_counts);
+
+    emscripten::value_object<DecodeGeometryResult>("DecodeGeometryResult")
+        .field("success", &DecodeGeometryResult::success)
+        .field("indices", &DecodeGeometryResult::indices)
+        .field("vertices", &DecodeGeometryResult::vertices);
     
     emscripten::function("default_mesh_settings", &default_mesh_settings);
     emscripten::function("default_video_settings", &default_video_settings);
