@@ -259,7 +259,7 @@ LayerResponseForm parse_layer_response_packet(emscripten::val data)
 
 Geometry decode_geoemtry(emscripten::val data)
 {
-    const std::vector<uint8_t> array = emscripten::convertJSArrayToNumberVector<uint8_t>(data);
+    const std::vector<uint8_t> array = emscripten::convertJSArrayToNumberVector<uint8_t>(data); //copy here
 
     Geometry geometry;
     std::vector<shared::Index> indices;
@@ -271,8 +271,8 @@ Geometry decode_geoemtry(emscripten::val data)
         emscripten::val vertex_view = emscripten::val(emscripten::typed_memory_view(sizeof(shared::Vertex) * vertices.size(), (uint8_t*)vertices.data()));
 
         geometry.success = true;
-        geometry.indices = emscripten::val::global("Uint8Array").new_(index_view);
-        geometry.vertices = emscripten::val::global("Uint8Array").new_(vertex_view);
+        geometry.indices = emscripten::val::global("Uint8Array").new_(index_view); //copy here
+        geometry.vertices = emscripten::val::global("Uint8Array").new_(vertex_view); //copy here
     }
 
     else

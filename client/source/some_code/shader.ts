@@ -31,6 +31,8 @@ export class Shader
         gl.compileShader(shader);
         const log = gl.getShaderInfoLog(shader);
 
+        error //TODO: Check compile status
+
         if(log != null)
         {
             log_error("Can't compile shader '" + this.name + "': " + log);
@@ -64,6 +66,8 @@ export class Shader
 
         gl.linkProgram(this.program);
         const log = gl.getProgramInfoLog(this.program);
+
+        error //TODO: Check link status
 
         if(log != null)
         {
