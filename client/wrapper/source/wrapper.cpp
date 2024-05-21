@@ -87,6 +87,14 @@ struct LayerResponseForm
     std::array<uint32_t, SHARED_VIEW_COUNT_MAX> index_counts;
 };
 
+struct Geometry
+{
+    bool success;
+
+    emscripten::val indices;
+    emscripten::val vertices;
+};
+
 template<class Type>
 emscripten::val build_array(const Type& packet)
 {
@@ -212,6 +220,14 @@ emscripten::val build_video_settings_packet(VideoSettingsForm form)
     return build_array(packet);
 }
 
+shared::PacketType parse_packet_type(emscripten::val data)
+{
+    const std::vector<uint8_t> array = emscripten::convertJSArrayToNumberVector<uint8_t>(data);
+    shared::PacketType* packet_type = (shared::PacketType*)array.data();
+
+    return *packet_type;
+}
+
 LayerResponseForm parse_layer_response_packet(emscripten::val data)
 {
     const std::vector<uint8_t> array = emscripten::convertJSArrayToNumberVector<uint8_t>(data);
@@ -241,39 +257,42 @@ LayerResponseForm parse_layer_response_packet(emscripten::val data)
     return form;
 }
 
-struct DecodeGeometryResult {
-    bool success;
-    emscripten::val indices;
-    emscripten::val vertices;
-};
-
-DecodeGeometryResult decode_geoemtry(emscripten::val data)
+Geometry decode_geoemtry(emscripten::val data)
 {
     const std::vector<uint8_t> array = emscripten::convertJSArrayToNumberVector<uint8_t>(data);
 
+    Geometry geometry;
     std::vector<shared::Index> indices;
     std::vector<shared::Vertex> vertices;
-    if (shared::GeometryCodec::decode(array, indices, vertices)) {
-        emscripten::val indices_view = emscripten::val(emscripten::typed_memory_view(sizeof(shared::Index) * indices.size(), (uint8_t*)indices.data()));
-        emscripten::val indices_array = emscripten::val::global("Uint8Array").new_(indices_view);
-        
-        emscripten::val vertices_view = emscripten::val(emscripten::typed_memory_view(sizeof(shared::Vertex) * vertices.size(), (uint8_t*)vertices.data()));
-        emscripten::val vertices_array = emscripten::val::global("Uint8Array").new_(vertices_view);
 
-        return {
-            .success = true,
-            .indices = indices_array,
-            .vertices = vertices_array,
-        };
-    } else {
-        return {
-            .success = false,
-        };
+    if (shared::GeometryCodec::decode(array, indices, vertices))
+    {
+        emscripten::val index_view = emscripten::val(emscripten::typed_memory_view(sizeof(shared::Index) * indices.size(), (uint8_t*)indices.data()));
+        emscripten::val vertex_view = emscripten::val(emscripten::typed_memory_view(sizeof(shared::Vertex) * vertices.size(), (uint8_t*)vertices.data()));
+
+        geometry.success = true;
+        geometry.indices = emscripten::val::global("Uint8Array").new_(index_view);
+        geometry.vertices = emscripten::val::global("Uint8Array").new_(vertex_view);
     }
+
+    else
+    {
+        geometry.success = false;
+    }
+
+    return geometry;
 }
 
 EMSCRIPTEN_BINDINGS(wrapper) 
 {
+    emscripten::enum_<shared::PacketType>("PacketType")
+        .value("PACKET_TYPE_SESSION_CREATE", shared::PACKET_TYPE_SESSION_CREATE)
+        .value("PACKET_TYPE_SESSION_DESTROY", shared::PACKET_TYPE_SESSION_DESTROY)
+        .value("PACKET_TYPE_RENDER_REQUEST", shared::PACKET_TYPE_RENDER_REQUEST)
+        .value("PACKET_TYPE_MESH_SETTINGS", shared::PACKET_TYPE_MESH_SETTINGS)
+        .value("PACKET_TYPE_VIDEO_SETTINGS", shared::PACKET_TYPE_VIDEO_SETTINGS)
+        .value("PACKET_TYPE_LAYER_RESPONSE", shared::PACKET_TYPE_LAYER_RESPONSE);
+
     emscripten::enum_<shared::MeshGeneratorType>("MeshGeneratorType")
         .value("MESH_GENERATOR_TYPE_LINE", shared::MESH_GENERATOR_TYPE_LINE)
         .value("MESH_GENERATOR_TYPE_LOOP", shared::MESH_GENERATOR_TYPE_LOOP);
@@ -287,7 +306,7 @@ EMSCRIPTEN_BINDINGS(wrapper)
         .value("VIDEO_CODEC_MODE_CONSTANT_BITRATE", shared::VIDEO_CODEC_MODE_CONSTANT_BITRATE)
         .value("VIDEO_CODEC_MODE_CONSTANT_QUALITY", shared::VIDEO_CODEC_MODE_CONSTANT_QUALITY);
 
-    emscripten::enum_<shared::ExportTypes>("ExportTypes")
+    emscripten::enum_<shared::ExportType>("ExportType")
         .value("EXPORT_TYPE_COLOR", shared::EXPORT_TYPE_COLOR)
         .value("EXPORT_TYPE_DEPTH", shared::EXPORT_TYPE_DEPTH)
         .value("EXPORT_TYPE_MESH", shared::EXPORT_TYPE_MESH)
@@ -429,10 +448,10 @@ EMSCRIPTEN_BINDINGS(wrapper)
         .field("vertex_counts", &LayerResponseForm::vertex_counts)
         .field("index_counts", &LayerResponseForm::index_counts);
 
-    emscripten::value_object<DecodeGeometryResult>("DecodeGeometryResult")
-        .field("success", &DecodeGeometryResult::success)
-        .field("indices", &DecodeGeometryResult::indices)
-        .field("vertices", &DecodeGeometryResult::vertices);
+    emscripten::value_object<Geometry>("Geometry")
+        .field("success", &Geometry::success)
+        .field("indices", &Geometry::indices)
+        .field("vertices", &Geometry::vertices);
     
     emscripten::function("default_mesh_settings", &default_mesh_settings);
     emscripten::function("default_video_settings", &default_video_settings);
@@ -441,6 +460,7 @@ EMSCRIPTEN_BINDINGS(wrapper)
     emscripten::function("build_render_request_packet(form)", &build_render_request_packet);
     emscripten::function("build_mesh_settings_packet(form)", &build_mesh_settings_packet);
     emscripten::function("build_video_settings_packet(form)", &build_video_settings_packet);
+    emscripten::function("parse_packet_type(data)", &parse_packet_type);
     emscripten::function("parse_layer_response_packet(data)", &parse_layer_response_packet);
     emscripten::function("decode_geoemtry(data)", &decode_geoemtry);
 }

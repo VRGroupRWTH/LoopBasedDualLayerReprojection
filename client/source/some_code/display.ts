@@ -1,34 +1,36 @@
 import { mat4, vec3 } from "gl-matrix";
 
-export enum DisplayDeviceType
+export enum DisplayType
 {
     Desktop,
     AR
 }
 
-export type OnDisplayDeviceRender = () => boolean;
-export type OnDisplayDeviceClose = () => void;
+export type OnDisplayRender = () => boolean;
+export type OnDisplayClose = () => void;
 
-export interface DisplayDevice
+export interface Display
 {
-    async create(canvas: HTMLCanvasElement) : Promise<boolean>;
+    create(canvas: HTMLCanvasElement) : Promise<boolean>;
     destroy() : void;
 
-    set_on_render(callback : OnDisplayDeviceRender) : void;
-    set_on_close(callback : OnDisplayDeviceClose) : void;
+    set_on_render(callback : OnDisplayRender) : void;
+    set_on_close(callback : OnDisplayClose) : void;
 
     get_projection_matrix() : mat4;
     get_view_matrix() : mat4;
-    get_type() : DisplayDeviceType;
+    get_position() : vec3;
+
+    get_type() : DisplayType;
 }
 
-export function build_display_device(type : DisplayDeviceType) : DisplayDevice | null
+export function build_display(type : DisplayType) : Display | null
 {
     switch(type)
     {
-    case DisplayDeviceType.Desktop:
+    case DisplayType.Desktop:
         return new DesktopDisplay();
-    case DisplayDeviceType.AR:
+    case DisplayType.AR:
         return new ARDisplay();
     default:
         break;
@@ -47,7 +49,6 @@ const DESKTOP_DISPLAY_FAR_DISTANCE = 200.0;
 class DesktopDisplay
 {
     private canvas : HTMLCanvasElement | null = null;
-    private context : WebGL2RenderingContext | null = null;
     private frame_request : number | null = null;
     private view_interval : number | null = null;
 
@@ -64,19 +65,12 @@ class DesktopDisplay
     private input_up = false;
     private input_down = false;
 
-    private on_render : OnRenderCallback | null = null;
-    private on_close : OnDisplayDeviceClose | null = null;
+    private on_render : OnDisplayRender | null = null;
+    private on_close : OnDisplayClose | null = null;
 
     async create(canvas: HTMLCanvasElement) : Promise<boolean>
     {
         this.canvas = canvas;
-        this.context = canvas.getContext("webgl2");
-
-        if(this.context == null)
-        {
-            return false;   
-        }
-
         this.canvas.onresize = this.on_resize;
         this.canvas.onmousemove = this.on_mouse_move;
         this.canvas.onkeydown = this.on_key_down;
@@ -104,13 +98,16 @@ class DesktopDisplay
         }
     }
 
-    set_on_render(callback : OnRenderCallback) : void
+    set_on_render(callback : OnDisplayRender) : void
     {
         this.on_render = callback;
 
         const render_function = () =>
         {
-
+            if(this.on_render == null)
+            {
+                return;    
+            }
 
             if(this.on_render())
             {
@@ -119,14 +116,21 @@ class DesktopDisplay
 
             else
             {
-                this.
+                this.frame_request = null;
+
+                if(this.on_close == null)
+                {
+                    return;
+                }
+
+                this.on_close();
             }
         };
 
         this.frame_request = requestAnimationFrame(render_function);
     }
 
-    set_on_close(callback : OnDisplayDeviceClose) : void
+    set_on_close(callback : OnDisplayClose) : void
     {
         this.on_close = callback;
     }
@@ -141,9 +145,14 @@ class DesktopDisplay
         return this.view_matrix;
     }
 
-    get_type() : DisplayDeviceType
+    get_position() : vec3
     {
-        return DisplayDeviceType.Desktop;
+        return this.position;
+    }
+
+    get_type() : DisplayType
+    {
+        return DisplayType.Desktop;
     }
 
     private compute_projection_matrix()
@@ -295,23 +304,24 @@ const AR_DISPLAY_FAR_DISTANCE = 200.0;
 class ARDisplay
 {
     private canvas : HTMLCanvasElement | null = null;
-    private context : WebGL2RenderingContext | null = null;
+    private gl : WebGL2RenderingContext | null = null;
     private session : XRSystem | null = null;
     private reference_space : XRReferenceSpace | null = null;
     private frame_request : number | null = null;
 
     private projection_matrix = mat4.create();
     private view_matrix = mat4.create();
+    private position = vec3.create();
 
-    private on_render : OnRenderCallback | null = null;
-    private on_close : OnCloseCallback | null = null;
+    private on_render : OnDisplayRender | null = null;
+    private on_close : OnDisplayClose | null = null;
 
     async create(canvas: HTMLCanvasElement) : Promise<boolean>
     {
         this.canvas = canvas;
-        this.context = canvas.getContext("webgl2");
+        this.gl = canvas.getContext("webgl2");
 
-        if(this.context == null)
+        if(this.gl == null)
         {
             return false;   
         }
@@ -343,7 +353,7 @@ class ARDisplay
 
         const render_state =
         {
-            baseLayer: new XRWebGLLayer(this.session, this.context),
+            baseLayer: new XRWebGLLayer(this.session, this.gl),
             depthNear: AR_DISPLAY_NEAR_DISTANCE,
             depthFar: AR_DISPLAY_FAR_DISTANCE,
         };
@@ -358,39 +368,6 @@ class ARDisplay
             }
         });
 
-
-
-
-
-        navigator.xr.requestSession("immersive-ar").then(session =>
-        {
-            this.session = session;
-            this.session.addEventListener("end", () => this.xrSession = undefined);
-        });
-
-
-        /*
-
-
-
-session.addEventListener("end", () => this.xrSession = undefined);
-
-                    session.updateRenderState({
-                        baseLayer: new XRWebGLLayer(session, gl),
-                        depthNear: settings.session.nearPlane,
-                        depthFar: settings.session.farPlane,
-                    });
-                    
-                    session.requestReferenceSpace("local").then(refSpace => {
-                        this.refSpace = refSpace;
-                        session.requestAnimationFrame((t: number, f: any) => this.onXRAnimationFrame(t, f));
-                    });
-
-        */
-
-
-
-
         return true;
     }
 
@@ -398,18 +375,55 @@ session.addEventListener("end", () => this.xrSession = undefined);
     {
         if (this.session != null)
         {
-            this.xrSession.cancelAnimationFrame(this.animationFrameRequest);
-            this.xrSession.end();
+            if(this.frame_request != null)
+            {
+                this.session.cancelAnimationFrame(this.frame_request);
+                this.frame_request = null;
+            }
+
+            this.session.end();
+
+            this.reference_space = null;
+            this.session = null;
         }
-
     }
 
-    set_on_render(callback : OnRenderCallback) : void
+    set_on_render(callback : OnDisplayRender) : void
     {
-        
+        this.on_render = callback;
+
+        const render_function = (time: number, frame: XRFrame) =>
+        {
+            if(this.on_render == null)
+            {
+                return;    
+            }
+
+            this.compute_projection_matrix(frame);
+            this.compute_view_matrix(frame);
+
+            if(this.on_render())
+            {
+                this.frame_request = this.session.requestAnimationFrame(render_function);
+            }
+
+            else
+            {
+                this.frame_request = null;
+
+                if(this.on_close == null)
+                {
+                    return;
+                }
+
+                this.on_close();
+            }
+        };
+
+        this.frame_request = this.session.requestAnimationFrame(render_function);
     }
 
-    set_on_close(callback : OnCloseCallback) : void
+    set_on_close(callback : OnDisplayClose) : void
     {
         this.on_close = callback;
     }
@@ -424,8 +438,32 @@ session.addEventListener("end", () => this.xrSession = undefined);
         return this.view_matrix;
     }
 
-    get_type() : DisplayDeviceType
+    get_position() : vec3
     {
-        return DisplayDeviceType.AR;
+        return this.position;
+    }
+
+    get_type() : DisplayType
+    {
+        return DisplayType.AR;
+    }
+
+    private compute_projection_matrix(frame: XRFrame) : void
+    {
+        const pose = frame.getViewerPose(this.reference_space);
+        const view = pose.views[0];
+
+        mat4.copy(this.projection_matrix, view.projectionMatrix);
+
+        //TODO: check projection_matrix
+    }
+
+    private compute_view_matrix(frame: XRFrame) : void
+    {
+        const pose = frame.getViewerPose(this.reference_space);
+        const view = pose.views[0];
+
+        //TODO: compute view_matrix
+        //TODO: compute position
     }
 }

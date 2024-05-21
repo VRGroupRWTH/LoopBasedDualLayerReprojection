@@ -29,7 +29,7 @@ namespace shared
         VIDEO_CODEC_MODE_CONSTANT_QUALITY = 0x01
     };
 
-    enum ExportTypes : uint32_t
+    enum ExportType : uint32_t
     {
         EXPORT_TYPE_COLOR         = 0x00,
         EXPORT_TYPE_DEPTH         = 0x01,
