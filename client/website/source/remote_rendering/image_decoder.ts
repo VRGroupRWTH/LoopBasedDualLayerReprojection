@@ -6,8 +6,18 @@ export class ImageFrame
     decode_start : number = 0.0;
     decode_end : number = 0.0;
 
+    image : WebGLTexture;
     video_frame : VideoFrame | null = null;
-    image : WebGLTexture | null = null;
+
+    constructor(image : WebGLTexture)
+    {
+        this.image = image;
+    }
+
+    close()
+    {
+        this.video_frame?.close()
+    }
 }
 
 export type OnImageDecoderDecoded = (frame : ImageFrame) => void;
@@ -15,17 +25,16 @@ export type OnImageDecoderError = () => void;
 
 export class ImageDecoder
 {
-    private gl : WebGL2RenderingContext | null = null;
+    private gl : WebGL2RenderingContext;
     private video_decoder : VideoDecoder | null = null;
-
-    private frame_pool : ImageFrame[] = [];
-    private frame_queue : ImageFrame[] = [];
     private is_configured : boolean = false;
+
+    private frame_queue : ImageFrame[] = [];
 
     private on_decoded : OnImageDecoderDecoded | null = null;
     private on_error : OnImageDecoderError | null = null;
 
-    constructor(gl : WebGLRendering2Context)
+    constructor(gl : WebGL2RenderingContext)
     {
         this.gl = gl;
     }
@@ -39,8 +48,7 @@ export class ImageDecoder
         };
 
         this.video_decoder = new VideoDecoder(video_parameters);
-        this.gl = gl;
-
+        
         return true;
     }
 
@@ -51,23 +59,33 @@ export class ImageDecoder
             this.video_decoder.close();
             this.video_decoder = null;   
         }
-
-
     }
 
-    create_frame() : ImageFrame
+    create_frame() : ImageFrame | null
     {
+        const image = this.gl.createTexture();
 
+        if(image == null)
+        {
+            return null;   
+        }
+
+        return new ImageFrame(image);
     }
 
-    destroy_frame()
+    destroy_frame(frame : ImageFrame)
     {
+        this.gl.deleteTexture(frame.image);
 
+        if(frame.video_frame != null)
+        {
+            frame.video_frame.close();   
+        }
     }
 
     submit_frame(frame : ImageFrame, data : Uint8Array) : boolean
     {
-        /*if(this.video_decoder == null)
+        if(this.video_decoder == null)
         {
             return false;   
         }
@@ -76,7 +94,7 @@ export class ImageDecoder
         {
             const video_config : VideoDecoderConfig = 
             {
-                codec: "asd",
+                codec: "asd", //TODO
                 hardwareAcceleration: "prefer-hardware",
                 optimizeForLatency: true
             };
@@ -84,27 +102,18 @@ export class ImageDecoder
             this.video_decoder.configure(video_config);
         }
 
-        let frame = this.frame_pool.pop();
-
-        if(frame == null)
-        {
-            frame = new ImageFrame();
-        }
-
-        frame.request_id = request_id;
-        frame.decode_start = performance.now();
-
-        this.frame_queue.push(frame);
-
         const chunk : EncodedVideoChunkInit = 
         {
             type: "key",
-            timestamp: request_id,
+            timestamp: frame.request_id,
             data
         };
 
         this.video_decoder.decode(new EncodedVideoChunk(chunk));
-*/
+
+        frame.decode_start = performance.now();
+        this.frame_queue.push(frame);
+
         return true;
     }
 
@@ -127,25 +136,6 @@ export class ImageDecoder
             return;   
         }
 
-        let image = this.gl?.createTexture();
-
-        if(image == null)
-        {
-            log_error("Can't create image for image frame!");
-
-            return;   
-        }
-
-        this.gl?.bindTexture(this.gl.TEXTURE_2D, image);
-        this.gl?.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA, this.gl.UNSIGNED_BYTE, video_frame);
-
-        this.gl?.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
-        this.gl?.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST);
-        this.gl?.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.CLAMP_TO_EDGE);
-        this.gl?.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.CLAMP_TO_EDGE);
-
-        this.gl?.bindTexture(this.gl.TEXTURE_2D, 0);
-
         let frame_index = this.frame_queue.findIndex(frame =>
         {
             frame.request_id == video_frame.timestamp;
@@ -160,7 +150,17 @@ export class ImageDecoder
 
         let frame = this.frame_queue.splice(frame_index, 1)[0];
         frame.video_frame = video_frame;
-        frame.image = image;
+        frame.decode_end = performance.now();
+
+        this.gl.bindTexture(this.gl.TEXTURE_2D, frame.image);
+        this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA, this.gl.UNSIGNED_BYTE, video_frame);
+
+        this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
+        this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST);
+        this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.CLAMP_TO_EDGE);
+        this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.CLAMP_TO_EDGE);
+
+        this.gl.bindTexture(this.gl.TEXTURE_2D, 0);
 
         this.on_decoded(frame);
     }

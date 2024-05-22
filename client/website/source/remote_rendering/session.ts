@@ -7,28 +7,6 @@ import * as Wrapper from "../../wrapper/binary/wrapper"
 
 type WrapperModule = Wrapper.MainModule;
 
-export class Layer
-{
-    form : Wrapper.LayerResponseForm;
-    image_frame : ImageFrame;
-    geometry_frame : GeometryFrame;
-
-
-}
-
-export class Frame
-{
-    layers : [Layer, Layer];
-
-    image_frames : [ImageFrame, ImageFrame];
-    geometry_frames : [GeometryFrame, GeometryFrame];
-
-    constructor()
-    {
-        
-    }
-}
-
 export enum SessionMode
 {
     Capture,
@@ -109,6 +87,12 @@ export class Session
         {
             return false;   
         }
+
+        if(this.display != null)
+        {
+            this.on_calibrate?.(this.display);
+        }
+
 
         return true;
     }
@@ -208,8 +192,10 @@ export class Session
 
 
 
-        this.gl?.clearColor(1,0,0,0);
+        this.gl?.clearColor(1,0,0,1);
         this.gl?.clear(this.gl.COLOR_BUFFER_BIT);
+
+        console.log("Frame");
 
 
 
