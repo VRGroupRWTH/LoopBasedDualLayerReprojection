@@ -8,17 +8,20 @@ export enum ShaderType
 
 export class Shader
 {
+    private gl : WebGL2RenderingContext;
     private name : string;
+
     private program : WebGLProgram | null = null;
     private attributes : {[name: string]: number} = {};
     private uniforms : {[name: string]: WebGLUniformLocation} = {};
 
-    constructor(name : string)
+    constructor(gl : WebGL2RenderingContext, name : string)
     {
+        this.gl = gl;
         this.name = name;
     }
 
-    attach_shader(gl : WebGLRenderingContext, source : string, type : ShaderType) : boolean
+    attach_shader(source : string, type : ShaderType) : boolean
     {
         const shader = gl.createShader(type);
 
@@ -31,14 +34,14 @@ export class Shader
         gl.compileShader(shader);
         const log = gl.getShaderInfoLog(shader);
 
-        error //TODO: Check compile status
-
         if(log != null)
         {
             log_error("Can't compile shader '" + this.name + "': " + log);
 
             return false;
         }
+
+        error //TODO: Check sompile status
 
         if(this.program == null)
         {
@@ -56,8 +59,7 @@ export class Shader
         return false;
     }
 
-
-    create_program(gl : WebGLRenderingContext) : boolean
+    create_program() : boolean
     {
         if(this.program == null)
         {
@@ -89,7 +91,7 @@ export class Shader
         return true;
     }
 
-    destroy_program(gl : WebGLRenderingContext)
+    destroy_program()
     {
         if(this.program != null)
         {
@@ -97,14 +99,24 @@ export class Shader
         }
     }
 
-    private extract_attributes(gl : WebGLRenderingContext) : boolean
+    use_shader()
+    {
+
+    }
+
+    use_default()
+    {
+        
+    }
+
+    private extract_attributes() : boolean
     {
         
 
         return true;
     }
 
-    private extract_uniforms(gl : WebGLRenderingContext) : boolean
+    private extract_uniforms() : boolean
     {
 
         return true;

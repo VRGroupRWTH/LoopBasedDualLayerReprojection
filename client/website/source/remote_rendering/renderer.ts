@@ -5,7 +5,7 @@ import { Frame } from "./session";
 export class Renderer
 {
     private canvas : HTMLCanvasElement | null = null;
-    private gl : WebGLRenderingContext | null = null;
+    private gl : WebGL2RenderingContext | null = null;
 
     private layer_shader : Shader = new Shader("Layer Shader");
 
@@ -33,9 +33,11 @@ export class Renderer
     {
         this.gl?.enable(gl.DEPTH_TEST);
         
+        this.gl?.clearDepth(1.0);
         this.gl?.clearColor(0.0, 0.0, 0.0, 1.0);
         this.gl?.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
 
+        
 
 
     }

@@ -1,6 +1,7 @@
-import * as Wrapper from "../../wrapper/binary/wrapper";
+import { SessionCreateForm, SessionDestroyForm, RenderRequestForm, MeshSettingsForm, VideoSettingsForm, LayerResponseForm, WrapperModule } from "./wrapper";
 
-type WrapperModule = Wrapper.MainModule;
+//Don't change this url. Use the parameters in the vite config!
+const CONNECTION_URL = "ws://localhost:" + client_port + "/server";
 
 export async function receive_scenes() : Promise<string[]>
 {
@@ -75,7 +76,7 @@ export async function send_image(file_path : string, width : number, height : nu
 export type OnConnectionOpen = () => void;
 export type OnConnectionClose = () => void;
 export type OnConnectionError = () => void;
-export type OnConnectionLayerResponse = (form : Wrapper.LayerResponseForm, geometry_data : Uint8Array, image_data : Uint8Array) => void;    
+export type OnConnectionLayerResponse = (form : LayerResponseForm, geometry_data : Uint8Array, image_data : Uint8Array) => void;
 
 export class Connection
 {
@@ -92,9 +93,9 @@ export class Connection
         this.wrapper = wrapper;
     }
 
-    create(url : string) : boolean
+    create() : boolean
     {
-        this.socket = new WebSocket(url);
+        this.socket = new WebSocket(CONNECTION_URL);
         this.socket.binaryType = "arraybuffer";
         this.socket.onmessage = this.on_packet;
 
@@ -134,35 +135,35 @@ export class Connection
         }
     }
 
-    send_session_create(form : Wrapper.SessionCreateForm) : boolean
+    send_session_create(form : SessionCreateForm) : boolean
     {
         let packet = this.wrapper.build_session_create_packet(form);
 
         return this.send_packet(packet);
     }
 
-    send_session_destory(form : Wrapper.SessionDestroyForm) : boolean
+    send_session_destory(form : SessionDestroyForm) : boolean
     {
         let packet = this.wrapper.build_session_destroy_packet(form);
 
         return this.send_packet(packet);
     }
 
-    send_render_request(form : Wrapper.RenderRequestForm) : boolean
+    send_render_request(form : RenderRequestForm) : boolean
     {
         let packet = this.wrapper.build_render_request_packet(form);
 
         return this.send_packet(packet);
     }
 
-    send_mesh_settings(form : Wrapper.MeshSettingsForm) : boolean
+    send_mesh_settings(form : MeshSettingsForm) : boolean
     {
         let packet = this.wrapper.build_mesh_settings_packet(form);
 
         return this.send_packet(packet);
     }
 
-    send_video_settings(form : Wrapper.VideoSettingsForm) : boolean
+    send_video_settings(form : VideoSettingsForm) : boolean
     {
         let packet = this.wrapper.build_video_settings_packet(form);
 

@@ -11,7 +11,7 @@ file(GLOB_RECURSE HEADER_FILES ${SOURCE_DIRECTORY}*.hpp)
 
 # General Settings
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_FLAGS "--embind-emit-tsd wrapper.d.ts -O3") 
+set(CMAKE_CXX_FLAGS "--embind-emit-tsd wrapper.d.ts -O3 -sEXPORT_NAME='wrapper'") 
 
 add_subdirectory(${SHARED_DIRECTORY} ${CMAKE_CURRENT_BINARY_DIR}/shared)
 

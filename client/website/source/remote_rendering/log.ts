@@ -44,7 +44,7 @@ function log_string(string : string)
     console.log(date_string + string);
 
     const text_encoder = new TextEncoder();
-    const text_buffer = text_encoder.encode(date_string + string);
+    const text_buffer = text_encoder.encode(date_string + string + "\n");
 
     send_log(LOG_FILE_NAME, text_buffer);
 }

@@ -5,6 +5,7 @@ export class ImageFrame
     request_id : number = 0;
     decode_start : number = 0.0;
     decode_end : number = 0.0;
+
     video_frame : VideoFrame | null = null;
     image : WebGLTexture | null = null;
 }
@@ -14,8 +15,8 @@ export type OnImageDecoderError = () => void;
 
 export class ImageDecoder
 {
+    private gl : WebGL2RenderingContext | null = null;
     private video_decoder : VideoDecoder | null = null;
-    private gl : WebGLRenderingContext | null = null;
 
     private frame_pool : ImageFrame[] = [];
     private frame_queue : ImageFrame[] = [];
@@ -24,7 +25,12 @@ export class ImageDecoder
     private on_decoded : OnImageDecoderDecoded | null = null;
     private on_error : OnImageDecoderError | null = null;
 
-    create(gl : WebGLRenderingContext) : boolean
+    constructor(gl : WebGLRendering2Context)
+    {
+        this.gl = gl;
+    }
+
+    create(gl : WebGL2RenderingContext) : boolean
     {
         const video_parameters : VideoDecoderInit =
         {
@@ -49,9 +55,19 @@ export class ImageDecoder
 
     }
 
-    submit(request_id : number, data : Uint8Array) : boolean
+    create_frame() : ImageFrame
     {
-        if(this.video_decoder == null)
+
+    }
+
+    destroy_frame()
+    {
+
+    }
+
+    submit_frame(frame : ImageFrame, data : Uint8Array) : boolean
+    {
+        /*if(this.video_decoder == null)
         {
             return false;   
         }
@@ -88,13 +104,8 @@ export class ImageDecoder
         };
 
         this.video_decoder.decode(new EncodedVideoChunk(chunk));
-
+*/
         return true;
-    }
-
-    release(frame : ImageFrame)
-    {
-
     }
 
     set_on_decoded(callback : OnImageDecoderDecoded)
@@ -165,16 +176,4 @@ export class ImageDecoder
 
         this.on_error();
     }
-}
-
-export class GeometryFrame
-{
-    request_id : number = 0;
-    decode_start : number = 0.0;
-    deocde_end : number = 0.0;
-}
-
-export class GeometryDecoder
-{
-
 }

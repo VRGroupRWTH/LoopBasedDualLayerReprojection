@@ -1,32 +1,47 @@
 import { defineConfig } from 'vite';
 import solidPlugin from 'vite-plugin-solid';
-// import devtools from 'solid-devtools/vite';
+import path from "path";
 
-export default defineConfig({
-  plugins: [
-    /* 
-    Uncomment the following line to enable solid-devtools.
-    For more info see https://github.com/thetarnav/solid-devtools/tree/main/packages/extension#readme
-    */
-    // devtools(),
-    solidPlugin()
-  ],
-  server: {
-    port: 3000,
-    watch: {
-      usePolling: true
+const server_ip = "localhost";
+const server_port = 9000;
+const client_port = 3000;
+
+export default defineConfig(
+{
+    root: "./website",
+    plugins:
+    [
+        solidPlugin()
+    ],
+    define: 
+    {
+        server_ip: JSON.stringify(server_ip),
+        server_port: JSON.stringify(server_port),
+        client_port: JSON.stringify(client_port)
     },
-    proxy: {
-      '/server': {
-           target: 'http://localhost:9000/',
-           changeOrigin: true,
-           secure: false,
-           rewrite: (path) => path.replace(/^\/server/, ''),
-           ws: true,
-       }
-  }
-  },
-  build: {
-    target: 'esnext',
-  },
+    resolve:
+    {
+        alias:
+        {
+            "~bootstrap": path.resolve(__dirname, "node_modules/bootstrap"),
+        }
+    },
+    server:
+    {
+        port: client_port,
+        strictPort: true,
+        proxy: 
+        {
+            "/server":
+            {
+                target: "http://" + server_ip + ":" + server_port,
+                changeOrigin: true,
+                rewrite: path => path.replace(/^\/server/, '')
+            }
+        },
+        watch:
+        {
+            usePolling: true
+        }
+    }
 });
