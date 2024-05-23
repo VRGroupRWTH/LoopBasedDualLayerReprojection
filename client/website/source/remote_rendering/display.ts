@@ -13,6 +13,7 @@ export interface Display
 {
     create() : Promise<boolean>;
     destroy() : void;
+    show() : void;
     calibrate(origin : vec3, side_x : vec3) : void;
 
     set_on_render(callback : OnDisplayRender) : void;
@@ -104,14 +105,12 @@ class DesktopDisplay
         }
     }
 
-    calibrate(origin : vec3, side_x : vec3)
+    show()
     {
-        //Noting to do here
-    }
-
-    set_on_render(callback : OnDisplayRender)
-    {
-        this.on_render = callback;
+        if(this.frame_request != null)
+        {
+            return;
+        }
 
         const render_function = () =>
         {
@@ -129,6 +128,16 @@ class DesktopDisplay
         };
 
         this.frame_request = requestAnimationFrame(render_function);
+    }
+
+    calibrate(origin : vec3, side_x : vec3)
+    {
+        
+    }
+
+    set_on_render(callback : OnDisplayRender)
+    {
+        this.on_render = callback;
     }
 
     set_on_close(callback : OnDisplayClose)

@@ -37,6 +37,13 @@ export default defineConfig(
                 target: "http://" + server_ip + ":" + server_port,
                 changeOrigin: true,
                 rewrite: path => path.replace(/^\/server/, '')
+            },
+            "/asd":
+            {
+                target: "ws://" + server_ip + ":" + server_port,
+                changeOrigin: true,
+                ws: true,
+                rewrite: path => path.replace(/^\/asd/, '')
             }
         },
         watch:

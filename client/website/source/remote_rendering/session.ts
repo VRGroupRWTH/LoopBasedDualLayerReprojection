@@ -1,11 +1,11 @@
 import { mat4 } from "gl-matrix";
 import { Connection } from "./connection";
 import { Display, DisplayType, build_display } from "./display";
-import { Frame, FRAME_LAYER_COUNT, Layer } from "./frame";
+import { Frame, FRAME_LAYER_COUNT, Layer, LAYER_VIEW_COUNT } from "./frame";
 import { GeometryDecoder } from "./geometry_decoder";
-import { ImageDecoder } from "./image_decoder";
+import { ImageDecoder, ImageFrame } from "./image_decoder";
 import { Renderer } from "./renderer";
-import { LayerResponseForm, MatrixArray, MeshGeneratorType, MeshSettingsForm, RenderRequestForm, VideoCodecType, VideoSettingsForm, WrapperModule } from "./wrapper";
+import { LayerResponseForm, Matrix, MatrixArray, MeshGeneratorType, MeshSettingsForm, RenderRequestForm, SessionCreateForm, VideoCodecType, VideoSettingsForm, WrapperModule } from "./wrapper";
 
 export enum SessionMode
 {
@@ -18,9 +18,8 @@ export enum SessionMode
 export interface SessionConfig
 {
     mode: SessionMode
-    animation_src_path : string,
-    animation_dst_path : string,
     output_path: string,
+    animation_file_name : string,
 
     resolution_width: number,
     resolution_height: number,
@@ -62,8 +61,8 @@ export class Session
     private render_request_interval : number | null = 0;
     private render_request_counter = 0;
 
-    private animation_src : Animation = new Animation();
-    private animation_dst : Animation = new Animation();
+    private animation_input : Animation = new Animation();
+    private animation_output : Animation = new Animation();
 
     private frame_pool : Frame[] = [];
     private frame_queue : Frame[] = [];
@@ -114,6 +113,7 @@ export class Session
 
         this.display?.set_on_render(this.on_display_render.bind(this));
         this.display?.set_on_close(this.on_internal_close.bind(this));
+        this.display?.show();
 
         for(const image_decoder of this.image_decoders)
         {
@@ -131,7 +131,6 @@ export class Session
         this.connection.set_on_layer_response(this.on_connection_layer_response.bind(this));
         this.connection.set_on_close(this.on_internal_close.bind(this));
 
-        this.render_request_interval = setInterval(this.on_request_render.bind(this), this.config.render_request_rate);
 
         //TODO: Start calibration if neccessary
 
@@ -268,23 +267,97 @@ export class Session
         return true;
     }
 
-    private load_animation()
+    private on_connection_open()
     {
+        console.log("a");
 
+        let view_count = LAYER_VIEW_COUNT;
+
+        if(this.config.mode == SessionMode.ReplayGroundTruth)
+        {
+            view_count = 1;   
+        }
+
+        let export_enabled = false;
+
+        if(this.config.mode == SessionMode.ReplayMethod || this.config.mode == SessionMode.ReplayGroundTruth)
+        {
+            export_enabled = true;   
+        }
+
+        const session_create : SessionCreateForm =
+        {
+            mesh_generator: this.config.mesh_generator,
+            video_codec: this.config.video_codec,
+            video_use_chroma_subsampling: this.config.video_use_chroma_subsampling,
+            projection_matrix: Layer.compute_projection_matrix() as Matrix,
+            resolution_width: this.config.resolution_width,
+            resolution_height: this.config.resolution_height,
+            layer_count: this.config.layer_count,
+            view_count,
+            scene_file_name: this.config.scene_file_name,
+            scene_scale: this.config.scene_scale,
+            scene_exposure: this.config.scene_exposure,
+            scene_indirect_intensity: this.config.scene_indirect_intensity,
+            sky_file_name: this.config.sky_file_name,
+            sky_intensity: this.config.sky_intensity,
+            export_enabled
+        };
+
+        this.connection?.send_session_create(session_create);             //TODO: Check error
+        this.connection?.send_mesh_settings(this.config.mesh_settings);   //TODO: Check error
+        this.connection?.send_video_settings(this.config.video_settings); //TODO: Check error
+
+        this.render_request_interval = setInterval(this.on_request_render.bind(this), this.config.render_request_rate);
     }
 
-    private store_animation()
+    private on_connection_layer_response(form : LayerResponseForm, geometry_data : Uint8Array, image_data : Uint8Array)
     {
+        if(this.gl == null)
+        {
+            return;    
+        }
 
+        let frame = this.frame_pool.pop();
+
+        if(frame == null)
+        {
+            frame = new Frame(this.wrapper, this.gl);   
+            
+            if(!frame.create(this.image_decoders, this.geometry_decoders))
+            {
+                return;
+            }
+        }
+
+        this.frame_queue.push(frame);
+
+        const layer_index = form.layer_index;
+
+
+
+        this.image_decoders[layer_index].submit_frame(frame.layers[layer_index].image_frame, image_data);
+        this.geometry_decoders[layer_index].submit_frame(frame.layers[layer_index].geometry_frame, geometry_data);
     }
 
-    private compute_animation_view_matrix() : mat4
+    private on_image_decoded(frame : ImageFrame)
     {
 
 
 
+        if(this.mode == SessionMode.Benchmark && layer_complete)
+        {
+            //Save the performance numbers of the incomming layers. Not here but where the frames are built   
+        }
+    }
 
-    }    
+    private on_geometry_decoded()
+    {
+        if(this.mode == SessionMode.Benchmark && layer_complete)
+        {
+            //Save the performance numbers of the incomming layers. Not here but where the frames are built   
+        }
+    }
 
     private on_request_render()
     {
@@ -371,32 +444,6 @@ export class Session
 
 
 
-    }
-
-    private on_connection_open()
-    {
-
-    }
-
-    private on_connection_layer_response(form : LayerResponseForm, geometry_data : Uint8Array, image_data : Uint8Array)
-    {
-        
-    }
-
-    private on_image_decoded()
-    {
-        if(this.mode == SessionMode.Benchmark && layer_complete)
-        {
-            //Save the performance numbers of the incomming layers. Not here but where the frames are built   
-        }
-    }
-
-    private on_geometry_decoded()
-    {
-        if(this.mode == SessionMode.Benchmark && layer_complete)
-        {
-            //Save the performance numbers of the incomming layers. Not here but where the frames are built   
-        }
     }
 
     private on_internal_close()

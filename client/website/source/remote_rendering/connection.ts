@@ -2,7 +2,7 @@ import { log_error } from "./log";
 import { SessionCreateForm, SessionDestroyForm, RenderRequestForm, MeshSettingsForm, VideoSettingsForm, LayerResponseForm, WrapperModule } from "./wrapper";
 
 //Don't change this url. Use the parameters in the vite config!
-const CONNECTION_URL = "ws://localhost:" + client_port + "/server";
+const CONNECTION_URL = "ws://localhost:" + client_port + "/asd";
 
 export async function receive_scenes() : Promise<string[]>
 {
@@ -100,6 +100,8 @@ export class Connection
 
         this.socket.onopen = () =>
         {
+            console.log("c");
+
             if(this.on_open != null)
             {
                this.on_open(); 
@@ -108,6 +110,8 @@ export class Connection
 
         this.socket.onclose = () =>
         {
+            console.log("d");
+
             if(this.on_close != null)
             {
                 this.on_close();   
@@ -116,6 +120,8 @@ export class Connection
 
         this.socket.onerror = (event : Event) => 
         {
+            console.log(event);
+
             if(this.on_close != null)
             {
                 this.on_close();   
