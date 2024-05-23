@@ -39,7 +39,7 @@ export class ImageDecoder
         this.gl = gl;
     }
 
-    create(gl : WebGL2RenderingContext) : boolean
+    create() : boolean
     {
         const video_parameters : VideoDecoderInit =
         {

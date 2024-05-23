@@ -110,6 +110,10 @@ void Server::submit_layer_data(LayerData* layer_data)
         packet->geometry_bytes = layer_data->geometry.size();
         packet->image_bytes = layer_data->image.size();
 
+        spdlog::warn("TODO: Implement geometry width and height. Besides that add it to the exporing process!");
+        packet->geometry_width = 0;
+        packet->geometry_height = 0;
+
         packet->view_metadata = layer_data->view_metadata;
         packet->view_matrices = layer_data->view_matrices;
 

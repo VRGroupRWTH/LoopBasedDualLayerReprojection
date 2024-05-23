@@ -1,3 +1,4 @@
+import { log_error } from "./log";
 import { SessionCreateForm, SessionDestroyForm, RenderRequestForm, MeshSettingsForm, VideoSettingsForm, LayerResponseForm, WrapperModule } from "./wrapper";
 
 //Don't change this url. Use the parameters in the vite config!
@@ -74,9 +75,8 @@ export async function send_image(file_path : string, width : number, height : nu
 }
 
 export type OnConnectionOpen = () => void;
-export type OnConnectionClose = () => void;
-export type OnConnectionError = () => void;
 export type OnConnectionLayerResponse = (form : LayerResponseForm, geometry_data : Uint8Array, image_data : Uint8Array) => void;
+export type OnConnectionClose = () => void;
 
 export class Connection
 {
@@ -84,9 +84,8 @@ export class Connection
     private socket : WebSocket | null = null;
 
     private on_open : OnConnectionOpen | null = null;
-    private on_close : OnConnectionClose | null = null;
-    private on_error : OnConnectionError | null = null;
     private on_layer_response : OnConnectionLayerResponse | null = null;
+    private on_close : OnConnectionClose | null = null;
 
     constructor(wrapper : WrapperModule)
     {
@@ -115,12 +114,12 @@ export class Connection
             }
         };
 
-        this.socket.onerror = () => 
+        this.socket.onerror = (event : Event) => 
         {
-            if(this.on_error != null)
+            if(this.on_close != null)
             {
-                this.on_error();
-            }   
+                this.on_close();   
+            } 
         }
 
         return true;
@@ -175,19 +174,14 @@ export class Connection
         this.on_open = callback;
     }
 
-    set_on_close(callback : OnConnectionClose)
-    {
-        this.on_close = callback;
-    }
-
-    set_on_error(callback : OnConnectionError)
-    {
-        this.on_error = callback;
-    }
-
     set_on_layer_response(callback : OnConnectionLayerResponse)
     {
         this.on_layer_response = callback;   
+    }
+
+    set_on_close(callback : OnConnectionClose)
+    {
+        this.on_close = callback;
     }
 
     private send_packet(packet : Uint8Array) : boolean
@@ -211,7 +205,7 @@ export class Connection
 
         if(!(event.data instanceof ArrayBuffer))
         {
-            this.on_error?.();
+            this.on_close?.();
 
             return;   
         }
@@ -220,7 +214,7 @@ export class Connection
 
         if(data.byteLength < 4)
         {
-            this.on_error?.();
+            this.on_close?.();
 
             return;
         }
@@ -233,7 +227,7 @@ export class Connection
             this.on_internal_layer_response(data);
             break;
         default:
-            this.on_error?.();
+            this.on_close?.();
             break;
         }
     }

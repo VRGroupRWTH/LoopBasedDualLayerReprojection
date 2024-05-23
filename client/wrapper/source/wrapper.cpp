@@ -78,6 +78,8 @@ struct LayerResponseForm
     uint32_t request_id;
     uint32_t layer_index;
 
+    uint32_t geometry_width;
+    uint32_t geometry_height;
     uint32_t geometry_bytes;
     uint32_t image_bytes;
 
@@ -238,6 +240,8 @@ LayerResponseForm parse_layer_response_packet(emscripten::val data)
     LayerResponseForm form;
     form.request_id = packet->request_id;
     form.layer_index = packet->layer_index;
+    form.geometry_width = packet->geometry_width;
+    form.geometry_height = packet->geometry_height;
     form.geometry_bytes = packet->geometry_bytes;
     form.image_bytes = packet->image_bytes;
     form.view_matrices = packet->view_matrices;
@@ -290,6 +294,12 @@ bool decode_geoemtry(emscripten::val data, emscripten::val indices, emscripten::
 
 EMSCRIPTEN_BINDINGS(wrapper) 
 {
+    emscripten::constant("INDEX_SIZE", sizeof(shared::Index));
+    emscripten::constant("VERTEX_SIZE", sizeof(shared::Vertex));
+    emscripten::constant("VERTEX_OFFSET_X", offsetof(shared::Vertex, x));
+    emscripten::constant("VERTEX_OFFSET_Y", offsetof(shared::Vertex, y));
+    emscripten::constant("VERTEX_OFFSET_Z", offsetof(shared::Vertex, z));
+
     emscripten::enum_<shared::PacketType>("PacketType")
         .value("PACKET_TYPE_SESSION_CREATE", shared::PACKET_TYPE_SESSION_CREATE)
         .value("PACKET_TYPE_SESSION_DESTROY", shared::PACKET_TYPE_SESSION_DESTROY)
@@ -446,6 +456,8 @@ EMSCRIPTEN_BINDINGS(wrapper)
     emscripten::value_object<LayerResponseForm>("LayerResponseForm")
         .field("request_id", &LayerResponseForm::request_id)
         .field("layer_index", &LayerResponseForm::layer_index)
+        .field("geometry_width", &LayerResponseForm::geometry_width)
+        .field("geometry_height", &LayerResponseForm::geometry_height)
         .field("geometry_bytes", &LayerResponseForm::geometry_bytes)
         .field("image_bytes", &LayerResponseForm::image_bytes)
         .field("view_metadata", &LayerResponseForm::view_metadata)

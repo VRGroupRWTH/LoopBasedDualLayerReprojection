@@ -1,7 +1,5 @@
-import * as Wrapper from "../../wrapper/binary/wrapper";
 import { GeometryDecodeTask } from "./geometry_decoder";
-
-type WrapperModule = Wrapper.MainModule;
+import { WrapperModule, load_wrapper_module } from "./wrapper";
 
 class GeometryWorker
 {
@@ -29,5 +27,5 @@ class GeometryWorker
     }
 }
 
-const wrapper = await Wrapper.default();
+const wrapper = await load_wrapper_module();
 const worker = new GeometryWorker(wrapper);

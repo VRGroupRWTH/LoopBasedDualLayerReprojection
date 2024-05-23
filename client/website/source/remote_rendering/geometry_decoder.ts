@@ -51,7 +51,7 @@ export class GeometryDecoder
 
     create() : boolean
     {
-        this.worker = new Worker(GeometryWorker);
+        this.worker = new GeometryWorker() as Worker;
         this.worker.onmessage = this.on_worker_response;
         this.worker.onerror = this.on_worker_error;
 

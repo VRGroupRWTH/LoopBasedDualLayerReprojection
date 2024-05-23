@@ -94,6 +94,8 @@ namespace shared
         uint32_t request_id = 0;
         uint32_t layer_index = 0;
 
+        uint32_t geometry_width = 0;
+        uint32_t geometry_height = 0;
         uint32_t geometry_bytes = 0;
         uint32_t image_bytes = 0;
 
