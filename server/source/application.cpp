@@ -264,7 +264,7 @@ bool Application::process_session()
 
             if (scene_file_length > 0)
             {
-                scene_file_name = std::string(session_create.scene_file_name.data(), scene_file_length);
+                scene_file_name = this->server->get_scene_directory() + std::string(session_create.scene_file_name.data(), scene_file_length);
             }
 
             else
@@ -276,7 +276,7 @@ bool Application::process_session()
 
             if (sky_file_length > 0)
             {
-                sky_file_name = std::string(session_create.sky_file_name.data(), sky_file_length);
+                sky_file_name = this->server->get_scene_directory() + std::string(session_create.sky_file_name.data(), sky_file_length);
             }
 
             this->scene = new Scene();

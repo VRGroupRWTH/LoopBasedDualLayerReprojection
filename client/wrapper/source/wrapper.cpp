@@ -28,7 +28,7 @@ struct SessionCreateForm
 {
     shared::MeshGeneratorType mesh_generator;
     shared::VideoCodecType video_codec;
-    uint8_t video_use_chroma_subsampling;
+    bool video_use_chroma_subsampling;
 
     shared::Matrix projection_matrix;
     uint32_t resolution_width;
@@ -236,7 +236,7 @@ LayerResponseForm parse_layer_response_packet(emscripten::val data)
 {
     const std::vector<uint8_t> packet_data = build_vector<uint8_t>(data, 0, sizeof(shared::LayerResponsePacket));
     const shared::LayerResponsePacket* packet = (const shared::LayerResponsePacket*)packet_data.data();
- 
+
     LayerResponseForm form;
     form.request_id = packet->request_id;
     form.layer_index = packet->layer_index;
@@ -277,17 +277,40 @@ bool decode_geoemtry(emscripten::val data, emscripten::val indices, emscripten::
         return false;
     }
 
-    emscripten::val local_index_view = emscripten::val(emscripten::typed_memory_view(sizeof(shared::Index) * local_indices.size(), (uint8_t*)local_indices.data()));
-    emscripten::val local_vertex_view = emscripten::val(emscripten::typed_memory_view(sizeof(shared::Vertex) * local_vertices.size(), (uint8_t*)local_vertices.data()));
+    uint32_t index_bytes = sizeof(shared::Index) * local_indices.size();
+    uint32_t vertex_bytes = sizeof(shared::Vertex) * local_vertices.size();
+
+    emscripten::val local_index_view = emscripten::val(emscripten::typed_memory_view(index_bytes, (uint8_t*)local_indices.data()));
+    emscripten::val local_vertex_view = emscripten::val(emscripten::typed_memory_view(vertex_bytes, (uint8_t*)local_vertices.data()));
 
     emscripten::val index_buffer = indices["buffer"];
     emscripten::val vertex_buffer = vertices["buffer"];
 
-    index_buffer.call<void>("resize", local_indices.size() * sizeof(shared::Index));
-    vertex_buffer.call<void>("resize", local_vertices.size() * sizeof(shared::Vertex));
+    uint32_t index_buffer_size = index_buffer["byteLength"].as<uint32_t>();
+    uint32_t vertex_buffer_size = vertex_buffer["byteLength"].as<uint32_t>();
 
-    indices.call<void>("set", local_index_view);   //copy here
-    vertices.call<void>("set", local_vertex_view); //copy here
+    if(index_buffer_size < index_bytes)
+    {
+        indices.set(emscripten::val::global("Uint8Array").new_(index_bytes));
+    }
+
+    else
+    {
+        indices.set(emscripten::val::global("Uint8Array").new_(index_buffer, 0, index_bytes));
+    }
+
+    if(vertex_buffer_size < vertex_bytes)
+    {
+        vertices.set(emscripten::val::global("Uint8Array").new_(vertex_bytes));
+    }
+
+    else
+    {
+        vertices.set(emscripten::val::global("Uint8Array").new_(vertex_buffer, 0, vertex_bytes));
+    }
+
+    indices.call<void>("set", local_index_view, 0);   //copy here
+    vertices.call<void>("set", local_vertex_view, 0); //copy here
 
     return true;
 }

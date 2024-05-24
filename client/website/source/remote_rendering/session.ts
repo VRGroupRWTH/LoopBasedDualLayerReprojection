@@ -1,11 +1,13 @@
-import { mat4 } from "gl-matrix";
+import { Animation, AnimationTransform } from "./animation";
 import { Connection } from "./connection";
 import { Display, DisplayType, build_display } from "./display";
-import { Frame, FRAME_LAYER_COUNT, Layer, LAYER_VIEW_COUNT } from "./frame";
+import { Frame, Layer, LAYER_VIEW_COUNT } from "./frame";
 import { GeometryDecoder } from "./geometry_decoder";
-import { ImageDecoder, ImageFrame } from "./image_decoder";
+import { ImageDecoder } from "./image_decoder";
 import { Renderer } from "./renderer";
-import { LayerResponseForm, Matrix, MatrixArray, MeshGeneratorType, MeshSettingsForm, RenderRequestForm, SessionCreateForm, VideoCodecType, VideoSettingsForm, WrapperModule } from "./wrapper";
+import { FileNameArray, LayerResponseForm, Matrix, MatrixArray, MeshGeneratorType, MeshSettingsForm, RenderRequestForm, SessionCreateForm, VideoCodecType, VideoSettingsForm, WrapperModule } from "./wrapper";
+import { log_error, log_info } from "./log";
+import { mat4, vec3 } from "gl-matrix";
 
 export enum SessionMode
 {
@@ -29,9 +31,8 @@ export interface SessionConfig
     mesh_generator: MeshGeneratorType,
     mesh_settings : MeshSettingsForm,
 
-    video_codec: VideoCodecType,
     video_settings : VideoSettingsForm
-    video_use_chroma_subsampling: number,
+    video_use_chroma_subsampling: boolean,
 
     scene_file_name: string,
     scene_scale: number,
@@ -40,6 +41,12 @@ export interface SessionConfig
 
     sky_file_name: string,
     sky_intensity: number
+}
+
+enum DecodedResource
+{
+    Image,
+    Geometry
 }
 
 export type OnSessionCalibrate = (display : Display) => void;
@@ -58,8 +65,8 @@ export class Session
     private image_decoders : ImageDecoder[] = [];
     private geometry_decoders : GeometryDecoder[] = [];
 
-    private render_request_interval : number | null = 0;
-    private render_request_counter = 0;
+    private request_interval : number | null = 0;
+    private request_counter = 0;
 
     private animation_input : Animation = new Animation();
     private animation_output : Animation = new Animation();
@@ -111,26 +118,27 @@ export class Session
             return false;    
         }
 
-        this.display?.set_on_render(this.on_display_render.bind(this));
-        this.display?.set_on_close(this.on_internal_close.bind(this));
+        this.display?.set_on_render(this.on_render.bind(this));
+        this.display?.set_on_close(this.on_shutdown.bind(this));
         this.display?.show();
 
-        for(const image_decoder of this.image_decoders)
+        for(let layer_index = 0; layer_index < this.config.layer_count; layer_index++)
         {
-            image_decoder.set_on_decoded(this.on_image_decoded.bind(this));
-            image_decoder.set_on_error(this.on_internal_close.bind(this));
+            const image_decoder = this.image_decoders[layer_index];
+            image_decoder.set_on_decoded(image_frame => this.on_decoded(DecodedResource.Image, layer_index, image_frame.request_id));
+            image_decoder.set_on_error(this.on_shutdown.bind(this));    
         }
 
-        for(const geometry_decoder of this.geometry_decoders)
+        for(let layer_index = 0; layer_index < this.config.layer_count; layer_index++)
         {
-            geometry_decoder.set_on_decoded(this.on_geometry_decoded.bind(this));
-            geometry_decoder.set_on_error(this.on_internal_close.bind(this));
+            const geometry_decoder = this.geometry_decoders[layer_index];
+            geometry_decoder.set_on_decoded(geometry_frame => this.on_decoded(DecodedResource.Geometry, layer_index, geometry_frame.request_id));
+            geometry_decoder.set_on_error(this.on_shutdown.bind(this));
         }
 
-        this.connection.set_on_open(this.on_connection_open.bind(this));
-        this.connection.set_on_layer_response(this.on_connection_layer_response.bind(this));
-        this.connection.set_on_close(this.on_internal_close.bind(this));
-
+        this.connection.set_on_open(this.on_connect.bind(this));
+        this.connection.set_on_layer_response(this.on_response.bind(this));
+        this.connection.set_on_close(this.on_shutdown.bind(this));
 
         //TODO: Start calibration if neccessary
 
@@ -139,10 +147,10 @@ export class Session
 
     destroy()
     {
-        if(this.render_request_interval != null)
+        if(this.request_interval != null)
         {
-            clearInterval(this.render_request_interval);
-            this.render_request_interval = null;
+            clearInterval(this.request_interval);
+            this.request_interval = null;
         }
 
         if(this.connection != null)
@@ -223,6 +231,8 @@ export class Session
             }   
         }
 
+        log_error("[Session] Can't create preferred display device!");
+
         //Fallback to desktop
         this.display = build_display(DisplayType.Desktop, this.canvas, this.gl);
 
@@ -234,6 +244,8 @@ export class Session
             }   
         }
 
+        log_error("[Session] Can't create fallback display device!");
+        
         return false;
     }
 
@@ -244,19 +256,23 @@ export class Session
             return false;   
         }
 
-        for(let layer_index = 0; layer_index < FRAME_LAYER_COUNT; layer_index++)
+        for(let layer_index = 0; layer_index < this.config.layer_count; layer_index++)
         {
             const image_decoder = new ImageDecoder(this.gl);
             
             if(!image_decoder.create())
             {
-                return false;   
+                log_error("[Session] Can't create image decoder!");
+
+                return false;
             }
 
             const geometry_decoder = new GeometryDecoder(this.gl);
 
             if(!geometry_decoder.create())
             {
+                log_error("[Session] Can't create geometry decoder!");
+
                 return false;
             }
 
@@ -267,9 +283,12 @@ export class Session
         return true;
     }
 
-    private on_connection_open()
+    private on_connect()
     {
-        console.log("a");
+        if(this.connection == null)
+        {
+            return;
+        }
 
         let view_count = LAYER_VIEW_COUNT;
 
@@ -288,7 +307,7 @@ export class Session
         const session_create : SessionCreateForm =
         {
             mesh_generator: this.config.mesh_generator,
-            video_codec: this.config.video_codec,
+            video_codec: this.wrapper.VideoCodecType.VIDEO_CODEC_TYPE_H264,
             video_use_chroma_subsampling: this.config.video_use_chroma_subsampling,
             projection_matrix: Layer.compute_projection_matrix() as Matrix,
             resolution_width: this.config.resolution_width,
@@ -304,19 +323,121 @@ export class Session
             export_enabled
         };
 
-        this.connection?.send_session_create(session_create);             //TODO: Check error
-        this.connection?.send_mesh_settings(this.config.mesh_settings);   //TODO: Check error
-        this.connection?.send_video_settings(this.config.video_settings); //TODO: Check error
+        if(!this.connection.send_session_create(session_create))
+        {
+            log_error("[Session] Can't send session create form!");
 
-        this.render_request_interval = setInterval(this.on_request_render.bind(this), this.config.render_request_rate);
+            return this.on_shutdown();
+        }
+
+        if(!this.connection.send_mesh_settings(this.config.mesh_settings))
+        {
+            log_error("[Session] Can't send mesh settings form!");
+
+            return this.on_shutdown();
+        }
+
+        if(!this.connection.send_video_settings(this.config.video_settings))
+        {
+            log_error("[Session] Can't send video settings form!");
+
+            return this.on_shutdown();
+        }
+
+        if(this.config.mode == SessionMode.ReplayMethod || this.config.mode == SessionMode.ReplayGroundTruth)
+        {
+            this.on_request();
+        }
+
+        else
+        {
+            this.request_interval = setInterval(this.on_request.bind(this), this.config.render_request_rate);
+        }
     }
 
-    private on_connection_layer_response(form : LayerResponseForm, geometry_data : Uint8Array, image_data : Uint8Array)
+    private on_request()
+    {
+        if(this.connection == null || this.display == null)
+        {
+            return;   
+        }
+
+        let request_id = this.request_counter;
+        let request_position = vec3.create();
+        let export_file_names = ["", "", "", ""] as FileNameArray;
+
+        if(this.config.mode == SessionMode.Capture)
+        {
+            request_position = this.display.get_position();
+
+            this.request_counter++;
+        }
+
+        else if(this.config.mode == SessionMode.Benchmark)
+        {
+            if(this.animation_input.has_finished())
+            {
+                return this.on_shutdown();
+            }
+
+            const transform = this.animation_input.get_transform();
+            mat4.getTranslation(request_position, transform.dst_transform);
+
+            this.request_counter++;
+        }
+
+        else
+        {
+            const transform = this.animation_input.get_transform_at(this.request_counter);
+
+            if(transform == null)
+            {
+                return this.on_shutdown();
+            }
+
+            if(this.config.mode == SessionMode.ReplayMethod)
+            {
+                mat4.getTranslation(request_position, transform.src_transform);   
+
+                export_file_names[this.wrapper.ExportType.EXPORT_TYPE_DEPTH.value] = this.config.output_path + "depth/depth_" + this.request_counter + ".pfm";
+                export_file_names[this.wrapper.ExportType.EXPORT_TYPE_MESH.value] = this.config.output_path + "mesh/mesh_" + this.request_counter + ".obj";
+                export_file_names[this.wrapper.ExportType.EXPORT_TYPE_FEATURE_LINES.value] = this.config.output_path + "feature_lines/feature_lines_" + this.request_counter + ".obj";
+            }
+
+            else if(this.config.mode == SessionMode.ReplayGroundTruth)
+            {
+                mat4.getTranslation(request_position, transform.dst_transform);
+
+                export_file_names[this.wrapper.ExportType.EXPORT_TYPE_COLOR.value] = this.config.output_path + "color/color_" + this.request_counter + ".ppm";
+            }
+        }
+
+        let request : RenderRequestForm = 
+        {
+            request_id,
+            export_file_names,
+            view_matrices: Layer.compute_view_matrices(request_position) as MatrixArray
+        };
+
+
+        log_info("Request");
+
+        if(!this.connection.send_render_request(request))
+        {
+            log_error("[Session] Can't send render request form!");
+
+            return this.on_shutdown();
+        }
+    }
+
+    private on_response(form : LayerResponseForm, geometry_data : Uint8Array, image_data : Uint8Array)
     {
         if(this.gl == null)
         {
-            return;    
+            return;
         }
+
+        log_info("Reponse")
 
         let frame = this.frame_pool.pop();
 
@@ -324,130 +445,200 @@ export class Session
         {
             frame = new Frame(this.wrapper, this.gl);   
             
-            if(!frame.create(this.image_decoders, this.geometry_decoders))
+            if(!frame.create(this.config.layer_count, this.image_decoders, this.geometry_decoders))
             {
-                return;
+                log_error("[Session] Can't create frame!");
+
+                return this.on_shutdown();
             }
         }
 
-        this.frame_queue.push(frame);
-
         const layer_index = form.layer_index;
+        const layer = frame.layers[layer_index];
+        layer.form = form;
+        layer.image_frame.request_id = form.request_id;
+        layer.geometry_frame.request_id = form.request_id;
 
-
-
-        this.image_decoders[layer_index].submit_frame(frame.layers[layer_index].image_frame, image_data);
-        this.geometry_decoders[layer_index].submit_frame(frame.layers[layer_index].geometry_frame, geometry_data);
-    }
-
-    private on_image_decoded(frame : ImageFrame)
-    {
-
-
-
-        if(this.mode == SessionMode.Benchmark && layer_complete)
+        if(!this.image_decoders[layer_index].submit_frame(layer.image_frame, image_data))
         {
-            //Save the performance numbers of the incomming layers. Not here but where the frames are built   
-        }
-    }
+            log_error("[Session] Can't submit image frame!");
 
-    private on_geometry_decoded()
-    {
-        if(this.mode == SessionMode.Benchmark && layer_complete)
+            return this.on_shutdown();
+        }
+
+        if(!this.geometry_decoders[layer_index].submit_frame(layer.geometry_frame, geometry_data))
         {
-            //Save the performance numbers of the incomming layers. Not here but where the frames are built   
+            log_error("[Session] Can't submit geometry frame!");   
+
+            return this.on_shutdown();
         }
+
+        this.frame_queue.push(frame);
     }
 
-    private on_request_render()
+    private on_decoded(resource : DecodedResource, layer_index : number, required_id : number)
     {
-        //Only call if the client is connected to the server
+        log_info("Decoded");
 
-        if(this.connection == null || this.display == null)
+        const frame_index = this.frame_queue.findIndex(frame =>
+        {
+            const form = frame.layers[layer_index].form;
+
+            if(form == null)
+            {
+                return false;
+            }
+
+            return form.request_id == required_id;
+        });
+
+        if(frame_index == -1)
+        {
+            log_error("[Session] Can't find frame to decoded resource!");
+
+            return this.on_shutdown();
+        }
+            
+        const frame = this.frame_queue[frame_index];
+
+        switch(resource)
+        {
+        case DecodedResource.Image:
+            frame.layers[layer_index].image_complete = true;
+            break;
+        case DecodedResource.Geometry:
+            frame.layers[layer_index].geometry_complete = true;
+            break;
+        default:
+            return;
+        }
+
+        if(frame.is_complete())
+        {
+            this.frame_queue.splice(frame_index, 1);
+
+            if(!frame.setup())
+            {
+                log_error("[Session] Can't setup frame!");
+
+                return this.on_shutdown();
+            }
+
+            let outdated_frame = null;
+
+            if(this.frame_active != null)
+            {
+                const active_form = this.frame_active.layers[0].form;
+
+                if(active_form == null || active_form.request_id < required_id)
+                {
+                    outdated_frame = this.frame_active;
+                    this.frame_active = frame;
+                }
+
+                else
+                {
+                    outdated_frame = frame;
+                }
+            }
+
+            else
+            {
+                this.frame_active = frame;
+            }
+
+            if(outdated_frame != null)
+            {
+                outdated_frame.clear();
+                
+                this.frame_pool.push(outdated_frame);
+            }
+        }
+
+        //TODO: Save the performance numbers of the incomming layers
+    }
+
+    private on_render()
+    {
+        if(this.display == null || this.renderer == null || this.frame_active == null)
         {
             return;   
         }
 
+        log_info("Render");
+
+        let projection_matrix = this.display.get_projection_matrix();
+        let view_matrix = this.display.get_view_matrix();
+
         if(this.config.mode == SessionMode.Capture)
         {
-            console.log(this.config.render_request_rate);
+            const src_transform = mat4.create();
+            mat4.identity(src_transform);
 
-            let request : RenderRequestForm = 
+            this.animation_output.add_transform(new AnimationTransform(src_transform, view_matrix));
+        }
+
+        else if(this.config.mode == SessionMode.Benchmark)
+        {
+            const active_form = this.frame_active.layers[0].form;
+
+            if(active_form == null)
             {
-                request_id: this.render_request_counter,
-                export_file_names: ["", "", "", ""],
-                view_matrices: Layer.compute_view_matrices(this.display?.get_position()) as MatrixArray
-            };
+                log_error("[Session] Can't active form!");
+                
+                return this.on_shutdown();
+            }
 
-            this.connection.send_render_request(request);
-            this.render_request_counter++;
+            const src_position = vec3.create();
+            mat4.getTranslation(src_position, active_form.view_matrices[0]);
+
+            const src_transform = active_form.view_matrices[0];
+            mat4.fromTranslation(src_transform, src_position);
+
+            const animation_transform = this.animation_input.get_transform();
+            view_matrix = animation_transform.dst_transform;
+
+            this.animation_output.add_transform(new AnimationTransform(src_transform, view_matrix));
         }
 
-        else if(this.config.mode == SessionMode.Benchmark || this.config.mode == SessionMode.ReplayMethod)
+        else
         {
-            
+            const active_form = this.frame_active.layers[0].form;
 
+            if(active_form == null)
+            {
+                log_error("[Session] Can't active form!");
+                
+                return this.on_shutdown();
+            }
 
+            const animation_transform = this.animation_input.get_transform_at(this.request_counter);
 
+            if(animation_transform == null)
+            {
+                return this.on_shutdown();
+            }
 
+            view_matrix = animation_transform.dst_transform;
+
+            if(active_form.request_id == this.request_counter)
+            {
+                this.request_counter++;
+
+                this.on_request();
+            }
         }
 
-        else if(this.config.mode == SessionMode.ReplayGroundTruth)
-        {
-            
-        }
-
-
-
-
-        //TODO: Request render using the latest position
-        //TODO: Call this function with the frequency defined in the settings
-
-        //TODO: Or use the animation that was captured
-
-        if(this.config.mode == SessionMode.ReplayMethod)
-        {
-
-        }
+        this.renderer.render(this.frame_active, projection_matrix, view_matrix);
     }
 
-    private on_display_render()
+    private on_shutdown()
     {
 
+        log_error("Some Error!");
 
+        //Save everything
 
-        //if(this.mode == SessionMode.Capture || this.mode == SessionMode.Benchmark) //Also save during the benchmark the rendering positions
-        {
-            this.display?.get_position();
-            this.display?.get_view_matrix();
-            this.display?.get_view_matrix();
-            //time point;
-            
-            //TODO Save position
-
-            //For benchmark also the src perspective
-        }
-
-
-        //if(this.mode == SessionMode.Benchmark)
-        {
-            //Save the rendering time on the client together with the src and dest perspective
-        }
-
-        this.gl?.clearColor(0.2,0.4,0.1,1);
-        this.gl?.clear(this.gl.COLOR_BUFFER_BIT);
-
-        
-
-
-
-
-
-
-    }
-
-    private on_internal_close()
-    {
         //Catch all cases that lead to a termination of the application
     }
 }

@@ -128,7 +128,7 @@ export class Shader
 
     use_default()
     {
-        this.gl.useProgram(0);
+        this.gl.useProgram(null);
     }
 
     uniform_int(name : string, value : number)

@@ -9,21 +9,21 @@ class GeometryWorker
     {
         this.wrapper = wrapper;
 
-        addEventListener("message", this.on_decode_task);
+        addEventListener("message", this.on_decode_task.bind(this));
     }
 
     on_decode_task(event : MessageEvent<GeometryDecodeTask>)
     {
-        const data = new Uint8Array(event.data.data);
-        const indices = new Uint8Array(event.data.frame.indices);
-        const vertices = new Uint8Array(event.data.frame.vertices);
+        const data = event.data.data;
+        const indices = event.data.indices;
+        const vertices = event.data.vertices;
 
         if(!this.wrapper.decode_geoemtry(data, indices, vertices))
         {
             throw new Error("Can't decode geometry!");
         }
 
-        postMessage(event.data, [event.data.data, event.data.frame.indices, event.data.frame.vertices]);
+        postMessage(event.data, [data.buffer, indices.buffer, vertices.buffer]);
     }
 }
 

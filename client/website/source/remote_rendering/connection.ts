@@ -1,4 +1,4 @@
-import { log_error } from "./log";
+import { log_debug, log_error } from "./log";
 import { SessionCreateForm, SessionDestroyForm, RenderRequestForm, MeshSettingsForm, VideoSettingsForm, LayerResponseForm, WrapperModule } from "./wrapper";
 
 //Don't change this url. Use the parameters in the vite config!
@@ -96,12 +96,10 @@ export class Connection
     {
         this.socket = new WebSocket(CONNECTION_URL);
         this.socket.binaryType = "arraybuffer";
-        this.socket.onmessage = this.on_packet;
+        this.socket.onmessage = this.on_packet.bind(this);
 
         this.socket.onopen = () =>
         {
-            console.log("c");
-
             if(this.on_open != null)
             {
                this.on_open(); 
@@ -110,8 +108,6 @@ export class Connection
 
         this.socket.onclose = () =>
         {
-            console.log("d");
-
             if(this.on_close != null)
             {
                 this.on_close();   
@@ -120,8 +116,6 @@ export class Connection
 
         this.socket.onerror = (event : Event) => 
         {
-            console.log(event);
-
             if(this.on_close != null)
             {
                 this.on_close();   
@@ -204,11 +198,6 @@ export class Connection
 
     private on_packet(event : MessageEvent<any>)
     {
-        if(this.on_packet == null)
-        {
-            return;   
-        }
-
         if(!(event.data instanceof ArrayBuffer))
         {
             this.on_close?.();
@@ -245,8 +234,8 @@ export class Connection
         const image_offset = data.length - form.image_bytes;
         const geometry_offset = image_offset - form.geometry_bytes;
 
-        const image_data = data.subarray(image_offset, form.image_bytes);
-        const geometry_data = data.subarray(geometry_offset, form.geometry_bytes)
+        const image_data = data.subarray(image_offset, image_offset + form.image_bytes);
+        const geometry_data = data.subarray(geometry_offset, geometry_offset + form.geometry_bytes)
 
         this.on_layer_response?.(form, geometry_data, image_data);
     }

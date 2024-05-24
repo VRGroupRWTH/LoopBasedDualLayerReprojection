@@ -1,4 +1,5 @@
 import GeometryWorker from "./geometry_worker?worker";
+import { log_error } from "./log";
 
 export class GeometryFrame
 {
@@ -6,11 +7,11 @@ export class GeometryFrame
     decode_start : number = 0.0;
     deocde_end : number = 0.0;
 
-    indices : ArrayBuffer = new ArrayBuffer(0);
+    indices : Uint8Array = new Uint8Array(0);
     index_buffer : WebGLBuffer;
     index_buffer_size : number = 0;
 
-    vertices : ArrayBuffer = new ArrayBuffer(0);
+    vertices : Uint8Array = new Uint8Array(0);
     vertex_buffer : WebGLBuffer;
     vertex_buffer_size : number = 0;
 
@@ -23,13 +24,18 @@ export class GeometryFrame
 
 export class GeometryDecodeTask
 {
-    frame : GeometryFrame;
-    data : ArrayBuffer;
+    request_id : number;
 
-    constructor(frame : GeometryFrame, data : ArrayBuffer)
+    data : Uint8Array;
+    indices : Uint8Array;
+    vertices : Uint8Array;
+
+    constructor(request_id : number, data : Uint8Array, indices : Uint8Array, vertices : Uint8Array)
     {
-        this.frame = frame;
+        this.request_id = request_id;
         this.data = data;
+        this.indices = indices;
+        this.vertices = vertices;
     }
 }
 
@@ -40,6 +46,8 @@ export class GeometryDecoder
 {
     private gl : WebGL2RenderingContext;
     private worker : Worker | null = null;
+
+    private frame_queue : GeometryFrame[] = [];
 
     private on_decoded : OnGeometryDecoderDecoded | null = null;
     private on_error : OnGeometryDecoderError | null = null;
@@ -52,8 +60,8 @@ export class GeometryDecoder
     create() : boolean
     {
         this.worker = new GeometryWorker() as Worker;
-        this.worker.onmessage = this.on_worker_response;
-        this.worker.onerror = this.on_worker_error;
+        this.worker.onmessage = this.on_worker_response.bind(this);
+        this.worker.onerror = this.on_worker_error.bind(this);
 
         return true;
     }
@@ -93,11 +101,19 @@ export class GeometryDecoder
     }
 
     //Takes ownership of data and the underlying array buffer as well as of the frame
-    submit_frame(frame : GeometryFrame, data : Uint8Array)
+    submit_frame(frame : GeometryFrame, data : Uint8Array) : boolean
     {
-        const task = new GeometryDecodeTask(frame, data.buffer);
-        
-        this.worker?.postMessage(task, [task.data, task.frame.indices, task.frame.vertices]);
+        if(this.worker == null)
+        {
+            return false;   
+        }
+
+        const task = new GeometryDecodeTask(frame.request_id, data, frame.indices, frame.vertices);
+        this.worker.postMessage(task, [task.data.buffer, task.indices.buffer, task.vertices.buffer]);
+
+        this.frame_queue.push(frame);
+
+        return true;
     }
 
     set_on_decoded(callback : OnGeometryDecoderDecoded)
@@ -117,13 +133,29 @@ export class GeometryDecoder
             return;
         }
 
-        const frame = response.data.frame;
+        const task = response.data;
+
+        let frame_index = this.frame_queue.findIndex(frame =>
+        {
+            return frame.request_id == task.request_id;
+        });
+
+        if(frame_index == -1)
+        {
+            log_error("[Geometry Decoder] Can't find geometry frame in frame queue!");
+
+            return;
+        }
+
+        const frame = this.frame_queue.splice(frame_index, 1)[0];
+        frame.indices = task.indices;
+        frame.vertices = task.vertices;
 
         if(frame.index_buffer_size < frame.indices.byteLength)
         {
             this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, frame.index_buffer);
             this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, frame.indices, this.gl.STREAM_DRAW);
-            this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, 0);
+            this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, null);
             
             frame.index_buffer_size = frame.indices.byteLength;
         }
@@ -132,14 +164,14 @@ export class GeometryDecoder
         {
             this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, frame.index_buffer);
             this.gl.bufferSubData(this.gl.ELEMENT_ARRAY_BUFFER, 0, frame.indices);
-            this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, 0);
+            this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, null);
         }
 
         if(frame.vertex_buffer_size < frame.vertices.byteLength)
         {
             this.gl.bindBuffer(this.gl.ARRAY_BUFFER, frame.vertex_buffer);
             this.gl.bufferData(this.gl.ARRAY_BUFFER, frame.vertices, this.gl.STREAM_DRAW);
-            this.gl.bindBuffer(this.gl.ARRAY_BUFFER, 0);
+            this.gl.bindBuffer(this.gl.ARRAY_BUFFER, null);
             
             frame.vertex_buffer_size = frame.vertices.byteLength;
         }
@@ -148,7 +180,7 @@ export class GeometryDecoder
         {
             this.gl.bindBuffer(this.gl.ARRAY_BUFFER, frame.vertex_buffer);
             this.gl.bufferSubData(this.gl.ARRAY_BUFFER, 0, frame.vertices);
-            this.gl.bindBuffer(this.gl.ARRAY_BUFFER, 0);
+            this.gl.bindBuffer(this.gl.ARRAY_BUFFER, null);
         }
 
         this.on_decoded(frame);

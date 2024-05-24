@@ -145,6 +145,24 @@ export class Animation
         return new AnimationTransform(src_transform, dst_transform);
     }
 
+    get_transform_at(index : number) : AnimationTransform | null
+    {
+        if(index >= this.key_frames.length)
+        {
+            return null;   
+        }
+
+        const key_frame = this.key_frames[index];
+        
+        const src_transform = mat4.create();
+        mat4.fromTranslation(src_transform, key_frame.src_position);
+
+        const dst_transform = mat4.create();
+        mat4.fromRotationTranslation(dst_transform, key_frame.dst_orientation, key_frame.dst_position);
+
+        return new AnimationTransform(src_transform, dst_transform);
+    }
+
     has_finished() : boolean
     {
         const time = performance.now() - this.start_time;

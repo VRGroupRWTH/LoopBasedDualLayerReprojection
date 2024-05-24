@@ -43,8 +43,8 @@ export class ImageDecoder
     {
         const video_parameters : VideoDecoderInit =
         {
-            output: this.on_interal_decoded,
-            error: this.on_interal_error
+            output: this.on_interal_decoded.bind(this),
+            error: this.on_interal_error.bind(this)
         };
 
         this.video_decoder = new VideoDecoder(video_parameters);
@@ -92,14 +92,20 @@ export class ImageDecoder
 
         if(!this.is_configured)
         {
+            let video_codec = "avc1." 
+            video_codec += data[5].toString(16).padStart(2, "0");
+            video_codec += data[6].toString(16).padStart(2, "0");
+            video_codec += data[7].toString(16).padStart(2, "0");
+
             const video_config : VideoDecoderConfig = 
             {
-                codec: "asd", //TODO
+                codec: video_codec,
                 hardwareAcceleration: "prefer-hardware",
                 optimizeForLatency: true
             };
 
             this.video_decoder.configure(video_config);
+            this.is_configured = true;
         }
 
         const chunk : EncodedVideoChunkInit = 
@@ -131,19 +137,19 @@ export class ImageDecoder
     {
         if(this.on_decoded == null)
         {
-            log_error("No callback for decoded image set!");
+            log_error("[Image Decoder] No callback for decoded image set!");
 
             return;   
         }
 
         let frame_index = this.frame_queue.findIndex(frame =>
         {
-            frame.request_id == video_frame.timestamp;
+            return frame.request_id == video_frame.timestamp;
         });
 
         if(frame_index == -1)
         {
-            log_error("Can't find image frame in frame queue!");
+            log_error("[Image Decoder] Can't find image frame in frame queue!");
 
             return;
         }
@@ -160,7 +166,7 @@ export class ImageDecoder
         this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.CLAMP_TO_EDGE);
         this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.CLAMP_TO_EDGE);
 
-        this.gl.bindTexture(this.gl.TEXTURE_2D, 0);
+        this.gl.bindTexture(this.gl.TEXTURE_2D, null);
 
         this.on_decoded(frame);
     }

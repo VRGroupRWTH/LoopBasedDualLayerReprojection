@@ -78,10 +78,10 @@ class DesktopDisplay
 
     async create() : Promise<boolean>
     {
-        this.canvas.onresize = this.on_resize;
-        this.canvas.onmousemove = this.on_mouse_move;
-        this.canvas.onkeydown = this.on_key_down;
-        this.canvas.onkeyup = this.on_key_up
+        this.canvas.onresize = this.on_resize.bind(this);
+        this.canvas.onmousemove = this.on_mouse_move.bind(this);
+        this.canvas.onkeydown = this.on_key_down.bind(this);
+        this.canvas.onkeyup = this.on_key_up.bind(this);
 
         vec3.zero(this.position);
         this.compute_projection_matrix();
@@ -118,7 +118,7 @@ class DesktopDisplay
             {
                 this.on_render();
 
-                this.frame_request = requestAnimationFrame(render_function); 
+                this.frame_request = requestAnimationFrame(render_function.bind(this)); 
             }
 
             else
@@ -127,7 +127,7 @@ class DesktopDisplay
             }
         };
 
-        this.frame_request = requestAnimationFrame(render_function);
+        this.frame_request = requestAnimationFrame(render_function.bind(this));
     }
 
     calibrate(origin : vec3, side_x : vec3)
@@ -174,6 +174,10 @@ class DesktopDisplay
     {
         const aspect_ratio = this.canvas.width / this.canvas.height;   
         mat4.perspective(this.projection_matrix, DESKTOP_DISPLAY_FIELD_OF_VIEW, aspect_ratio, DESKTOP_DISPLAY_NEAR_DISTANCE, DESKTOP_DISPLAY_FAR_DISTANCE);
+
+        //mat4.perspective() creates an left-handed projection matrix that needs to be converted to right-handed
+        this.projection_matrix[10] = -this.projection_matrix[10];
+        this.projection_matrix[14] = -this.projection_matrix[14];
     }
 
     private compute_view_matrix()

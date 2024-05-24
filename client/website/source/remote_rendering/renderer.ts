@@ -94,16 +94,16 @@ export class Renderer
 
                 this.gl.bindVertexArray(layer.vertex_arrays[view_index]);
                 this.gl.drawRangeElements(this.gl.TRIANGLES, vertex_offset, vertex_offset + form.vertex_counts[view_index], form.index_counts[view_index], this.gl.UNSIGNED_INT, index_offset);
-                this.gl.bindVertexArray(0);
+                this.gl.bindVertexArray(null);
 
                 index_offset += form.index_counts[view_index];
                 vertex_offset += form.vertex_counts[view_index];
             }    
 
             this.gl.activeTexture(this.gl.TEXTURE0);
-            this.gl.bindTexture(this.gl.TEXTURE_2D, 0);
+            this.gl.bindTexture(this.gl.TEXTURE_2D, null);
 
-            this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, 0);
+            this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, null);
         }
 
         this.layer_shader.use_default();

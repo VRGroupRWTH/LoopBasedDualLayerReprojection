@@ -131,7 +131,10 @@ void Server::submit_layer_data(LayerData* layer_data)
 
         std::string_view packet_view = std::string_view((const char*)this->send_buffer.data(), this->send_buffer.size());
 
-        this->web_socket->send(packet_view);
+        if (this->web_socket != nullptr)
+        {
+            this->web_socket->send(packet_view);
+        }
 
         for (uint32_t index = 0; index < SHARED_VIEW_COUNT_MAX; index++)
         {

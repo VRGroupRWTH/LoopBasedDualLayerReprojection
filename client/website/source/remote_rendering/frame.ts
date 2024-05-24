@@ -4,7 +4,7 @@ import { ImageDecoder, ImageFrame } from "./image_decoder";
 import { LayerResponseForm, WrapperModule } from "./wrapper";
 import { log_error } from "./log";
 
-export const FRAME_LAYER_COUNT : number = 2;
+export const FRAME_MAX_LAYER_COUNT : number = 2;
 export const LAYER_VIEW_COUNT : number = 6;
 export const LAYER_NEAR_DISTANCE : number = 0.1;
 export const LAYER_FAR_DISTANCE : number = 100.0;
@@ -32,6 +32,10 @@ export class Layer
     {
         const projection_matrix = mat4.create();
         mat4.perspective(projection_matrix, Math.PI / 2.0, 1.0, LAYER_NEAR_DISTANCE, LAYER_FAR_DISTANCE);
+
+        //mat4.perspective() creates an left-handed projection matrix that needs to be converted to right-handed
+        projection_matrix[10] = -projection_matrix[10];
+        projection_matrix[14] = -projection_matrix[14];
 
         return projection_matrix;
     }
@@ -87,9 +91,9 @@ export class Frame
         this.gl = gl;
     }
 
-    create(image_decoders : ImageDecoder[], geometry_decoders : GeometryDecoder[]) : boolean
+    create(layer_count : number, image_decoders : ImageDecoder[], geometry_decoders : GeometryDecoder[]) : boolean
     {
-        for(let layer_index = 0; layer_index < FRAME_LAYER_COUNT; layer_index++)
+        for(let layer_index = 0; layer_index < layer_count; layer_index++)
         {
             const image_frame = image_decoders[layer_index].create_frame();
             
@@ -175,7 +179,7 @@ export class Frame
                 this.gl.enableVertexAttribArray(1);
                 this.gl.vertexAttribPointer(1, 1, this.gl.FLOAT, false, this.wrapper.VERTEX_SIZE, vertex_offset + this.wrapper.VERTEX_OFFSET_Z);
 
-                this.gl.bindVertexArray(0);
+                this.gl.bindVertexArray(null);
 
                 vertex_offset += this.wrapper.VERTEX_SIZE * form.vertex_counts[view_index];
             }
