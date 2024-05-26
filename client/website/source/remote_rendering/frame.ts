@@ -1,4 +1,4 @@
-import { mat4, vec3 } from "gl-matrix";
+import { mat4, vec2, vec3 } from "gl-matrix";
 import { GeometryDecoder, GeometryFrame } from "./geometry_decoder";
 import { ImageDecoder, ImageFrame } from "./image_decoder";
 import { LayerResponseForm, WrapperModule } from "./wrapper";
@@ -31,7 +31,7 @@ export class Layer
     static compute_projection_matrix() : mat4
     {
         const projection_matrix = mat4.create();
-        mat4.perspective(projection_matrix, Math.PI / 2.0, 1.0, LAYER_NEAR_DISTANCE, LAYER_FAR_DISTANCE);
+        mat4.perspective(projection_matrix, Math.PI / 2.0, 1.0, LAYER_FAR_DISTANCE, LAYER_NEAR_DISTANCE); //Switch far and near distance due to mat4.perspective() implementation
 
         //mat4.perspective() creates an left-handed projection matrix that needs to be converted to right-handed
         projection_matrix[10] = -projection_matrix[10];
@@ -76,6 +76,25 @@ export class Layer
         }
 
         return view_matrices;
+    }
+
+    static compute_image_offset(image_size : vec2, view_index : number) : vec2
+    {
+        const image_offset = vec2.create();
+        
+        if(view_index < 3)
+        {
+            image_offset[0] = image_size[0] * view_index;
+            image_offset[1] = 0.0;
+        }
+
+        else
+        {
+            image_offset[0] = image_size[0] * (view_index - 3);
+            image_offset[1] = image_size[1];
+        }
+
+        return image_offset;
     }
 }
 
@@ -165,13 +184,14 @@ export class Frame
                 return false;
             }
 
-            this.gl.bindBuffer(this.gl.ARRAY_BUFFER, layer.geometry_frame.vertex_buffer);
-
             let vertex_offset = 0;
 
             for(let view_index = 0; view_index < LAYER_VIEW_COUNT; view_index++)
             {
                 this.gl.bindVertexArray(layer.vertex_arrays[view_index]);
+
+                this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, layer.geometry_frame.index_buffer);
+                this.gl.bindBuffer(this.gl.ARRAY_BUFFER, layer.geometry_frame.vertex_buffer);
 
                 this.gl.enableVertexAttribArray(0);
                 this.gl.vertexAttribIPointer(0, 2, this.gl.UNSIGNED_SHORT, this.wrapper.VERTEX_SIZE, vertex_offset);
@@ -184,6 +204,7 @@ export class Frame
                 vertex_offset += this.wrapper.VERTEX_SIZE * form.vertex_counts[view_index];
             }
 
+            this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, null);
             this.gl.bindBuffer(this.gl.ARRAY_BUFFER, null);
         }
 

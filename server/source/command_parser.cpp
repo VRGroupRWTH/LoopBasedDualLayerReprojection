@@ -23,6 +23,8 @@ bool CommandParser::parse(uint32_t argument_count, const char** argument_list)
             if (index == argument_count - 1)
             {
                 this->scene_file_name = argument_list[argument_count - 1];
+
+                continue;
             }
 
             else

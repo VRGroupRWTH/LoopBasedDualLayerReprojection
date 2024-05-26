@@ -2,12 +2,14 @@ import { Animation, AnimationTransform } from "./animation";
 import { Connection } from "./connection";
 import { Display, DisplayType, build_display } from "./display";
 import { Frame, Layer, LAYER_VIEW_COUNT } from "./frame";
-import { GeometryDecoder } from "./geometry_decoder";
-import { ImageDecoder } from "./image_decoder";
+import { GeometryDecoder, GeometryFrame } from "./geometry_decoder";
+import { ImageDecoder, ImageFrame } from "./image_decoder";
 import { Renderer } from "./renderer";
 import { FileNameArray, LayerResponseForm, Matrix, MatrixArray, MeshGeneratorType, MeshSettingsForm, RenderRequestForm, SessionCreateForm, VideoCodecType, VideoSettingsForm, WrapperModule } from "./wrapper";
 import { log_error, log_info } from "./log";
-import { mat4, vec3 } from "gl-matrix";
+import { mat4, vec2, vec3 } from "gl-matrix";
+
+const SESSION_FRAME_QUEUE_MAX_LENGTH = 8;
 
 export enum SessionMode
 {
@@ -43,13 +45,6 @@ export interface SessionConfig
     sky_intensity: number
 }
 
-enum DecodedResource
-{
-    Image,
-    Geometry
-}
-
-export type OnSessionCalibrate = (display : Display) => void;
 export type OnSessionClose = () => void;
 
 export class Session
@@ -74,8 +69,8 @@ export class Session
     private frame_pool : Frame[] = [];
     private frame_queue : Frame[] = [];
     private frame_active : Frame | null = null;
+    private frame_dropped : number = 0;
 
-    private on_calibrate : OnSessionCalibrate | null = null;
     private on_close : OnSessionClose | null = null;
 
     constructor(config : SessionConfig, wrapper : WrapperModule, canvas : HTMLCanvasElement)
@@ -94,7 +89,7 @@ export class Session
             return false;   
         }
 
-        if(!await this.create_display(preferred_display))
+        if(!await this.create_display(preferred_display, true))
         {
             return false;   
         }
@@ -111,7 +106,7 @@ export class Session
             return false;   
         }
 
-        this.renderer = new Renderer(this.canvas, this.gl);
+        this.renderer = new Renderer(this.wrapper, this.gl);
         
         if(!this.renderer.create())
         {
@@ -125,22 +120,20 @@ export class Session
         for(let layer_index = 0; layer_index < this.config.layer_count; layer_index++)
         {
             const image_decoder = this.image_decoders[layer_index];
-            image_decoder.set_on_decoded(image_frame => this.on_decoded(DecodedResource.Image, layer_index, image_frame.request_id));
+            image_decoder.set_on_decoded(image_frame => this.on_decoded(image_frame, layer_index, image_frame.request_id));
             image_decoder.set_on_error(this.on_shutdown.bind(this));    
         }
 
         for(let layer_index = 0; layer_index < this.config.layer_count; layer_index++)
         {
             const geometry_decoder = this.geometry_decoders[layer_index];
-            geometry_decoder.set_on_decoded(geometry_frame => this.on_decoded(DecodedResource.Geometry, layer_index, geometry_frame.request_id));
+            geometry_decoder.set_on_decoded(geometry_frame => this.on_decoded(geometry_frame, layer_index, geometry_frame.request_id));
             geometry_decoder.set_on_error(this.on_shutdown.bind(this));
         }
 
         this.connection.set_on_open(this.on_connect.bind(this));
         this.connection.set_on_layer_response(this.on_response.bind(this));
         this.connection.set_on_close(this.on_shutdown.bind(this));
-
-        //TODO: Start calibration if neccessary
 
         return true;
     }
@@ -204,17 +197,12 @@ export class Session
         }
     }
 
-    set_on_calibrate(callback : OnSessionCalibrate)
-    {
-        this.on_calibrate = callback;
-    }
-
     set_on_close(callback : OnSessionClose)
     {
         this.on_close = callback;
     }
 
-    private async create_display(preferred_display : DisplayType) : Promise<boolean>
+    private async create_display(preferred_display : DisplayType, calibrate : boolean) : Promise<boolean>
     {
         if(this.gl == null)
         {
@@ -225,10 +213,12 @@ export class Session
         
         if(this.display != null)
         {
-            if(await this.display.create())
+            if(await this.display.create(calibrate))
             {
                 return true;
-            }   
+            }
+
+            this.display.destroy();
         }
 
         log_error("[Session] Can't create preferred display device!");
@@ -238,10 +228,12 @@ export class Session
 
         if(this.display != null)
         {
-            if(await this.display.create())
+            if(await this.display.create(calibrate))
             {
                 return true;
             }   
+
+            this.display.destroy();
         }
 
         log_error("[Session] Can't create fallback display device!");
@@ -419,9 +411,6 @@ export class Session
             view_matrices: Layer.compute_view_matrices(request_position) as MatrixArray
         };
 
-
-        log_info("Request");
-
         if(!this.connection.send_render_request(request))
         {
             log_error("[Session] Can't send render request form!");
@@ -437,20 +426,54 @@ export class Session
             return;
         }
 
-        log_info("Reponse")
-
-        let frame = this.frame_pool.pop();
-
-        if(frame == null)
+        let frame = this.frame_queue.find(frame =>
         {
-            frame = new Frame(this.wrapper, this.gl);   
-            
-            if(!frame.create(this.config.layer_count, this.image_decoders, this.geometry_decoders))
+            for(const layer of frame.layers)
             {
-                log_error("[Session] Can't create frame!");
+                if(layer.form == null)   
+                {
+                    continue;   
+                }
 
-                return this.on_shutdown();
+                return layer.form.request_id == form.request_id;
             }
+
+            return false;
+        });
+
+        if(frame == undefined)
+        {
+            if(this.frame_queue.length > SESSION_FRAME_QUEUE_MAX_LENGTH) //Frame queue is full. Reject all new frames that are older than the current request id.
+            {
+                this.frame_dropped = form.request_id;
+                
+                log_info("[Session] Dropping server response for request id " + form.request_id + " and layer " + form.layer_index + " !");
+
+                return;
+            }
+
+            if(form.request_id <= this.frame_dropped)
+            {
+                log_info("[Session] Dropping server response for request id " + form.request_id + " and layer " + form.layer_index + " !");
+
+                return;
+            }
+
+            frame = this.frame_pool.pop();
+
+            if(frame == undefined)
+            {
+                frame = new Frame(this.wrapper, this.gl);   
+                        
+                if(!frame.create(this.config.layer_count, this.image_decoders, this.geometry_decoders))
+                {
+                    log_error("[Session] Can't create frame!");
+    
+                    return this.on_shutdown();
+                }
+            }
+
+            this.frame_queue.push(frame);
         }
 
         const layer_index = form.layer_index;
@@ -472,14 +495,10 @@ export class Session
 
             return this.on_shutdown();
         }
-
-        this.frame_queue.push(frame);
     }
 
-    private on_decoded(resource : DecodedResource, layer_index : number, required_id : number)
+    private on_decoded(decoded_frame : ImageFrame | GeometryFrame, layer_index : number, required_id : number)
     {
-        log_info("Decoded");
-
         const frame_index = this.frame_queue.findIndex(frame =>
         {
             const form = frame.layers[layer_index].form;
@@ -494,23 +513,28 @@ export class Session
 
         if(frame_index == -1)
         {
-            log_error("[Session] Can't find frame to decoded resource!");
+            log_error("[Session] Can't find frame!");
 
             return this.on_shutdown();
         }
             
         const frame = this.frame_queue[frame_index];
 
-        switch(resource)
+        if(decoded_frame instanceof ImageFrame)
         {
-        case DecodedResource.Image:
             frame.layers[layer_index].image_complete = true;
-            break;
-        case DecodedResource.Geometry:
+        }
+
+        else if(decoded_frame instanceof GeometryFrame)
+        {
             frame.layers[layer_index].geometry_complete = true;
-            break;
-        default:
-            return;
+        }
+
+        else
+        {
+            log_error("[Session] Unkown decoded resource!");
+
+            return this.on_shutdown();
         }
 
         if(frame.is_complete())
@@ -564,8 +588,6 @@ export class Session
         {
             return;   
         }
-
-        log_info("Render");
 
         let projection_matrix = this.display.get_projection_matrix();
         let view_matrix = this.display.get_view_matrix();
@@ -629,11 +651,19 @@ export class Session
             }
         }
 
-        this.renderer.render(this.frame_active, projection_matrix, view_matrix);
+        const view_image_size = vec2.create();
+        view_image_size[0] = this.config.resolution_width;
+        view_image_size[1] = this.config.resolution_height;
+
+        this.renderer.render(this.display, this.frame_active, projection_matrix, view_matrix, view_image_size);
     }
 
-    private on_shutdown()
+    private async on_shutdown()
     {
+        if(this.config.mode == SessionMode.Capture)
+        {
+            await this.animation_output.store(this.config.output_path + "animation_capture.json?log");
+        }
 
         log_error("Some Error!");
 

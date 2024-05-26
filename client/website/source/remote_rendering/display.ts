@@ -1,4 +1,5 @@
-import { mat4, vec3 } from "gl-matrix";
+import { mat4, vec2, vec3 } from "gl-matrix";
+import { log_info } from "./log";
 
 export enum DisplayType
 {
@@ -11,20 +12,18 @@ export type OnDisplayClose = () => void;
 
 export interface Display
 {
-    create() : Promise<boolean>;
+    create(calibrate : boolean) : Promise<boolean>;
     destroy() : void;
     show() : void;
-    calibrate(origin : vec3, side_x : vec3) : void;
 
     set_on_render(callback : OnDisplayRender) : void;
     set_on_close(callback : OnDisplayClose) : void;
 
+    get_resolution() : vec2;
     get_projection_matrix() : mat4;
     get_view_matrix() : mat4;
     get_position() : vec3;
     get_type() : DisplayType;
-
-    requires_calibration() : boolean;
 }
 
 export function build_display(type : DisplayType, canvas : HTMLCanvasElement, gl : WebGL2RenderingContext) : Display | null
@@ -34,7 +33,7 @@ export function build_display(type : DisplayType, canvas : HTMLCanvasElement, gl
     case DisplayType.Desktop:
         return new DesktopDisplay(canvas);
     case DisplayType.AR:
-        return new ARDisplay(gl);
+        return new ARDisplay(canvas, gl);
     default:
         break;
     }
@@ -43,8 +42,8 @@ export function build_display(type : DisplayType, canvas : HTMLCanvasElement, gl
 }
 
 const DESKTOP_DISPLAY_VIEW_UPDATE_RATE = 16; //In milliseconds
-const DESKTOP_DISPLAY_MOVEMENT_SPEED = 1.5;
-const DESKTOP_DISPLAY_ROTATION_SPEED = 0.05;
+const DESKTOP_DISPLAY_MOVEMENT_SPEED = 1.0;
+const DESKTOP_DISPLAY_ROTATION_SPEED = 0.025;
 const DESKTOP_DISPLAY_FIELD_OF_VIEW = 80.0;
 const DESKTOP_DISPLAY_NEAR_DISTANCE = 0.1;
 const DESKTOP_DISPLAY_FAR_DISTANCE = 200.0;
@@ -54,7 +53,10 @@ class DesktopDisplay
     private canvas : HTMLCanvasElement;
     private frame_request : number | null = null;
     private view_interval : number | null = null;
+    private resize_observer : ResizeObserver | null = null;
+    private close_button_element : HTMLDivElement | null = null;
 
+    private resolution = vec2.create();
     private projection_matrix = mat4.create();
     private view_matrix = mat4.create();
     private position = vec3.create();
@@ -76,12 +78,21 @@ class DesktopDisplay
         this.canvas = canvas;
     }
 
-    async create() : Promise<boolean>
+    async create(calibrate : boolean) : Promise<boolean>
     {
-        this.canvas.onresize = this.on_resize.bind(this);
         this.canvas.onmousemove = this.on_mouse_move.bind(this);
         this.canvas.onkeydown = this.on_key_down.bind(this);
         this.canvas.onkeyup = this.on_key_up.bind(this);
+
+        this.resolution[0] = this.canvas.offsetWidth;
+        this.resolution[1] = this.canvas.offsetHeight;
+        this.canvas.width = this.resolution[0];
+        this.canvas.height = this.resolution[1];
+
+        this.resize_observer = new ResizeObserver(this.on_resize.bind(this));
+        this.resize_observer.observe(this.canvas);
+
+        this.setup_close_button();
 
         vec3.zero(this.position);
         this.compute_projection_matrix();
@@ -94,6 +105,18 @@ class DesktopDisplay
 
     destroy()
     {
+        if(this.close_button_element != null)
+        {
+            this.close_button_element.remove();
+            this.close_button_element = null;   
+        }
+
+        if(this.resize_observer != null)
+        {
+            this.resize_observer.disconnect();
+            this.resize_observer = null;   
+        }
+
         if(this.frame_request != null)
         {
             cancelAnimationFrame(this.frame_request);   
@@ -130,11 +153,6 @@ class DesktopDisplay
         this.frame_request = requestAnimationFrame(render_function.bind(this));
     }
 
-    calibrate(origin : vec3, side_x : vec3)
-    {
-        
-    }
-
     set_on_render(callback : OnDisplayRender)
     {
         this.on_render = callback;
@@ -143,6 +161,11 @@ class DesktopDisplay
     set_on_close(callback : OnDisplayClose)
     {
         this.on_close = callback;
+    }
+
+    get_resolution() : vec2
+    {
+        return this.resolution;
     }
 
     get_projection_matrix() : mat4
@@ -165,15 +188,10 @@ class DesktopDisplay
         return DisplayType.Desktop;
     }
 
-    requires_calibration() : boolean
-    {
-        return false;
-    }
-
     private compute_projection_matrix()
     {
-        const aspect_ratio = this.canvas.width / this.canvas.height;   
-        mat4.perspective(this.projection_matrix, DESKTOP_DISPLAY_FIELD_OF_VIEW, aspect_ratio, DESKTOP_DISPLAY_NEAR_DISTANCE, DESKTOP_DISPLAY_FAR_DISTANCE);
+        const aspect_ratio = this.canvas.offsetWidth / this.canvas.offsetHeight;   
+        mat4.perspective(this.projection_matrix, (DESKTOP_DISPLAY_FIELD_OF_VIEW / 180.0) * Math.PI, aspect_ratio, DESKTOP_DISPLAY_FAR_DISTANCE, DESKTOP_DISPLAY_NEAR_DISTANCE); //Switch far and near distance due to mat4.perspective() implementation
 
         //mat4.perspective() creates an left-handed projection matrix that needs to be converted to right-handed
         this.projection_matrix[10] = -this.projection_matrix[10];
@@ -182,7 +200,7 @@ class DesktopDisplay
 
     private compute_view_matrix()
     {
-        const forward = vec3.fromValues(0,0,1);
+        const forward = vec3.fromValues(0,0,-1);
         const side = vec3.fromValues(1,0,0);
         const up = vec3.fromValues(0,1,0);
 
@@ -219,7 +237,7 @@ class DesktopDisplay
             vec3.scaleAndAdd(delta_position, delta_position, up, -delta_time * DESKTOP_DISPLAY_MOVEMENT_SPEED);
         }
         
-        vec3.rotateY(delta_position, delta_position, vec3.fromValues(0.0, 0.0, 0.0), this.horizontal_angle);
+        vec3.rotateY(delta_position, delta_position, vec3.fromValues(0.0, 0.0, 0.0), -this.horizontal_angle);
         vec3.add(this.position, this.position, delta_position);
 
         let translation = vec3.create();
@@ -231,14 +249,48 @@ class DesktopDisplay
         mat4.translate(this.view_matrix, this.view_matrix, translation);
     }
 
-    private on_resize(even : UIEvent)
+    private setup_close_button()
     {
+        this.close_button_element = document.createElement("div");
+        this.close_button_element.className = "rounded-circle";
+        this.close_button_element.style.position = "absolute";
+        this.close_button_element.style.top = "32px";
+        this.close_button_element.style.right = "32px";
+        this.close_button_element.style.zIndex = "200";
+        this.close_button_element.style.background = "rgba(255, 255, 255, 0.5)";
+        this.close_button_element.style.display = "flex";
+        this.close_button_element.style.alignItems = "center";
+        this.close_button_element.style.justifyContent = "center";
+        this.close_button_element.style.padding = "0.5rem";
+        
+        this.canvas.parentElement?.insertBefore(this.close_button_element, this.canvas);
+
+        const button = document.createElement("button");
+        button.className = "btn-close";
+        button.onclick = this.on_close_internal.bind(this);
+
+        this.close_button_element.appendChild(button);
+    }
+
+    private on_resize(entries: ResizeObserverEntry[])
+    {
+        if(entries.length == 0)
+        {
+            return;   
+        }
+
+        const canvas_entry = entries[0];
+        this.resolution[0] = canvas_entry.contentBoxSize[0].inlineSize;
+        this.resolution[1] = canvas_entry.contentBoxSize[0].blockSize;
+        this.canvas.width = this.resolution[0];
+        this.canvas.height = this.resolution[1];
+
         this.compute_projection_matrix();
     }
 
     private on_mouse_move(event : MouseEvent)
     {
-        if(event.button == 0)
+        if((event.buttons & 0x01) != 0)
         {
             this.horizontal_angle += event.movementX * DESKTOP_DISPLAY_ROTATION_SPEED;
             this.vertical_angle += event.movementY * DESKTOP_DISPLAY_ROTATION_SPEED;
@@ -259,7 +311,7 @@ class DesktopDisplay
 
     private on_key_down(event : KeyboardEvent)
     {
-        switch(event.key)
+        switch(event.code)
         {
         case "KeyW":
             this.input_forward = true;
@@ -276,7 +328,7 @@ class DesktopDisplay
         case "Space":
             this.input_up = true;
             break;
-        case "Shift":
+        case "ShiftLeft":
             this.input_down = true;
             break;
         default:
@@ -286,7 +338,7 @@ class DesktopDisplay
 
     private on_key_up(event : KeyboardEvent)
     {
-        switch(event.key)
+        switch(event.code)
         {
         case "KeyW":
             this.input_forward = false;
@@ -303,25 +355,46 @@ class DesktopDisplay
         case "Space":
             this.input_up = false;
             break;
-        case "Shift":
+        case "ShiftLeft":
             this.input_down = false;
             break;
         default:
             break;
         }
     }
+
+    private on_close_internal()
+    {
+        if(this.on_close == null)
+        {
+            return;
+        }
+
+        this.on_close();
+    }
 }
 
 const AR_DISPLAY_NEAR_DISTANCE = 0.1;
 const AR_DISPLAY_FAR_DISTANCE = 200.0;
+const AR_DISPLAY_FLOOR_OFFSET = 1.5;   //Distance of the device to the floor in meters when calibrating the origin
 
 class ARDisplay
 {
+    private canvas : HTMLCanvasElement;
     private gl : WebGL2RenderingContext;
     private session : XRSystem | null = null;
     private reference_space : XRReferenceSpace | null = null;
     private frame_request : number | null = null;
 
+    private overlay_element : HTMLDivElement | null = null;
+    private close_button_element : HTMLDivElement | null = null;
+    private calibration_element : HTMLDivElement | null = null;
+
+    private calibration_origin : vec3 = vec3.create();
+    private calibration_side_x : vec3 = vec3.create();
+    private calibration_complete : boolean = false;
+
+    private resolution = vec2.create();
     private projection_matrix = mat4.create();
     private view_matrix = mat4.create();
     private position = vec3.create();
@@ -329,25 +402,48 @@ class ARDisplay
     private on_render : OnDisplayRender | null = null;
     private on_close : OnDisplayClose | null = null;
 
-    constructor(gl : WebGL2RenderingContext)
+    constructor(canvas : HTMLCanvasElement, gl : WebGL2RenderingContext)
     {
+        this.canvas = canvas;
         this.gl = gl;
     }
 
-    async create() : Promise<boolean>
+    async create(calibrate : boolean) : Promise<boolean>
     {
         if(!("xr" in navigator) || navigator.xr == null)
         {
+            log_info("[ARDisplay] WebXR feature not supported!");
+
             return false;
         }
 
-        this.session = await navigator.xr.requestSession("immersive-ar").catch((error : any) =>
+        let session_options = {};
+
+        if(calibrate)
+        {
+            this.overlay_element = document.createElement("div");
+            this.overlay_element.id = "ar-display-overlay";
+            this.canvas.parentElement?.insertBefore(this.overlay_element, this.canvas);
+
+            session_options =       
+            {
+                requiredFeatures: ["dom-overlay"],
+                domOverlay:
+                {
+                    root: this.overlay_element
+                }
+            };
+        }
+
+        this.session = await navigator.xr.requestSession("immersive-ar", session_options).catch((error : any) =>
         {
             return null;
         });
 
         if(this.session == null)
         {
+            log_info("[ARDisplay] WebXR does not support AR mode!");
+
             return false;   
         }
 
@@ -358,7 +454,21 @@ class ARDisplay
 
         if(this.reference_space == null)
         {
-            return false;   
+            log_info("[ARDisplay] Can't create reference space local!");
+
+            return false;
+        }
+
+        const context_response = await this.gl.makeXRCompatible().catch((error) =>
+        {
+            return false;
+        })
+
+        if(context_response != undefined)
+        {
+            log_info("[ARDisplay] Can't make rendering context XR compatible!");
+
+            return false;
         }
 
         const render_state =
@@ -369,14 +479,14 @@ class ARDisplay
         };
 
         this.session.updateRenderState(render_state);
+        this.session.addEventListener("end", this.on_close_internal.bind(this));
 
-        this.session.addEventListener("end", () =>
+        this.setup_close_button();
+
+        if(calibrate)
         {
-            if(this.on_close != null)
-            {
-                this.on_close();
-            }
-        });
+            this.setup_calibrate_origin();
+        }
 
         return true;
     }
@@ -396,58 +506,63 @@ class ARDisplay
             this.reference_space = null;
             this.session = null;
         }
+
+        if(this.overlay_element != null)
+        {
+            this.overlay_element.remove();
+            this.overlay_element = null;
+            this.close_button_element = null;
+            this.calibration_element = null;
+        }
     }
 
-    calibrate(origin : vec3, side_x : vec3)
+    show()
     {
-        //TODO: implement calibration calculation
-
-        return true;
-    }
-
-    set_on_render(callback : OnDisplayRender)
-    {
-        this.on_render = callback;
+        if(this.frame_request != null)
+        {
+            return;
+        }
 
         const render_function = (time: number, frame: XRFrame) =>
         {
-            if(this.on_render == null)
-            {
-                return;    
-            }
+            const base_layer = this.session.renderState.baseLayer;
+            this.resolution[0] = base_layer.framebufferWidth;
+            this.resolution[1] = base_layer.framebufferHeight;
 
             this.compute_projection_matrix(frame);
             this.compute_view_matrix(frame);
-            
-            if(this.on_view_change != null)
-            {
-                this.on_view_change();   
-            }
 
-            if(this.on_render())
+            if(this.on_render != null)
             {
+                this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, base_layer.framebuffer);
+                this.on_render();
+                this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
+
                 this.frame_request = this.session.requestAnimationFrame(render_function);
             }
 
             else
             {
                 this.frame_request = null;
-
-                if(this.on_close == null)
-                {
-                    return;
-                }
-
-                this.on_close();
             }
         };
 
         this.frame_request = this.session.requestAnimationFrame(render_function);
     }
 
+    set_on_render(callback : OnDisplayRender)
+    {
+        this.on_render = callback;
+    }
+
     set_on_close(callback : OnDisplayClose)
     {
         this.on_close = callback;
+    }
+
+    get_resolution() : vec2
+    {
+        return this.resolution;
     }
 
     get_projection_matrix() : mat4
@@ -470,27 +585,207 @@ class ARDisplay
         return DisplayType.AR;
     }
 
-    requires_calibration() : boolean
-    {
-        return true;
-    }
-
     private compute_projection_matrix(frame: XRFrame)
     {
         const pose = frame.getViewerPose(this.reference_space);
+
+        if(pose == null)
+        {
+            return;
+        }
+
         const view = pose.views[0];
-
         mat4.copy(this.projection_matrix, view.projectionMatrix);
-
-        //TODO: check projection_matrix
     }
 
     private compute_view_matrix(frame: XRFrame)
     {
         const pose = frame.getViewerPose(this.reference_space);
-        const view = pose.views[0];
 
-        //TODO: compute view_matrix
-        //TODO: compute position
+        if(pose == null)
+        {
+            return;
+        }
+
+        const calibration_matrix = mat4.create();
+        const calibration_matrix_inverse = mat4.create();
+        mat4.identity(calibration_matrix);
+        mat4.identity(calibration_matrix_inverse);
+
+        if(this.calibration_complete)
+        {
+            const origin = this.calibration_origin;
+            const side_x = this.calibration_side_x;
+
+            const side_direction = vec3.create();
+            vec3.sub(side_direction, side_x, origin);
+            side_direction[1] = 0.0;
+
+            const forward_direction = vec3.create();
+            forward_direction[0] = -side_direction[2];
+            forward_direction[1] = 0.0;
+            forward_direction[2] = side_direction[0];
+
+            vec3.normalize(side_direction, side_direction);
+            vec3.normalize(forward_direction, forward_direction);
+
+            calibration_matrix[0] = side_direction[0];
+            calibration_matrix[1] = side_direction[1];
+            calibration_matrix[2] = side_direction[2];
+            calibration_matrix[8] = forward_direction[0];
+            calibration_matrix[9] = forward_direction[1];
+            calibration_matrix[10] = forward_direction[2];
+            calibration_matrix[12] = origin[0];
+            calibration_matrix[13] = origin[1] + AR_DISPLAY_FLOOR_OFFSET;
+            calibration_matrix[14] = origin[2];
+
+            mat4.invert(calibration_matrix_inverse, calibration_matrix);
+        }
+
+        const view = pose.views[0];
+        mat4.copy(this.view_matrix, view.transform.inverse.matrix);
+        mat4.multiply(this.view_matrix, this.view_matrix, calibration_matrix_inverse);
+
+        this.position[0] = view.transform.position.x;
+        this.position[1] = view.transform.position.y;
+        this.position[2] = view.transform.position.z;
+        vec3.transformMat4(this.position, this.position, calibration_matrix);
+    }
+
+    private setup_close_button()
+    {
+        if(this.overlay_element == null)
+        {
+            return;    
+        }
+
+        this.close_button_element = document.createElement("div");
+        this.close_button_element.className = "rounded-circle";
+        this.close_button_element.style.position = "absolute";
+        this.close_button_element.style.top = "32px";
+        this.close_button_element.style.right = "32px";
+        this.close_button_element.style.zIndex = "200";
+        this.close_button_element.style.background = "rgba(255, 255, 255, 0.5)";
+        this.close_button_element.style.display = "flex";
+        this.close_button_element.style.alignItems = "center";
+        this.close_button_element.style.justifyContent = "center";
+        this.close_button_element.style.padding = "0.5rem";
+
+        this.overlay_element.appendChild(this.close_button_element);
+
+        const button = document.createElement("button");
+        button.className = "btn-close";
+        button.onclick = this.on_close_internal.bind(this);
+
+        this.close_button_element.appendChild(button);
+    }
+
+    private setup_calibrate_origin()
+    {
+        if(this.overlay_element == null)
+        {
+            return;
+        }
+
+        this.calibration_element = document.createElement("div");
+        this.calibration_element.style.width = "100%";
+        this.calibration_element.style.height = "100%";
+        this.calibration_element.style.background = "black";
+        this.calibration_element.style.display = "flex";
+        this.calibration_element.style.flexDirection = "column";
+        this.calibration_element.style.justifyContent = "center";
+        this.calibration_element.style.alignItems = "center";
+        this.calibration_element.style.padding = "48px";
+
+        this.overlay_element.appendChild(this.calibration_element);
+
+        const description = document.createElement("p");
+        description.innerText = "Please move the device to the position that should be the origin of the virtual environment. Besides that, make sure to hold the device roughly at chest height when pushing confirm.";
+        description.style.color = "white";
+        description.style.maxWidth = "256px";
+
+        this.calibration_element.appendChild(description);
+
+        const button = document.createElement("button");
+        button.className = "btn btn-primary"; //Use Boostrap
+        button.innerText = "Confirm";
+        button.style.marginTop = "48px";
+        button.onclick = this.on_calibrate_origin.bind(this);
+
+        this.calibration_element.appendChild(button);
+    }
+
+    private setup_calibrate_side_x()
+    {
+        if(this.overlay_element == null)
+        {
+            return;
+        }
+
+        this.calibration_element = document.createElement("div");
+        this.calibration_element.style.width = "100%";
+        this.calibration_element.style.height = "100%";
+        this.calibration_element.style.background = "black";
+        this.calibration_element.style.display = "flex";
+        this.calibration_element.style.flexDirection = "column";
+        this.calibration_element.style.justifyContent = "center";
+        this.calibration_element.style.alignItems = "center";
+        this.calibration_element.style.padding = "48px";
+
+        this.overlay_element.appendChild(this.calibration_element);
+
+        const description = document.createElement("p");
+        description.innerText = "Please move the device along the x-axis of the virtual environment and press confirm.";
+        description.style.color = "white";
+        description.style.maxWidth = "256px";
+
+        this.calibration_element.appendChild(description);
+
+        const button = document.createElement("button");
+        button.className = "btn btn-primary"; //Use Boostrap
+        button.innerText = "Confirm";
+        button.style.marginTop = "48px";
+        button.onclick = this.on_calibrate_side_x.bind(this);
+
+        this.calibration_element.appendChild(button);
+    }
+
+    private on_calibrate_origin()
+    {
+        if(this.calibration_element == null)
+        {
+            return;
+        }
+
+        vec3.copy(this.calibration_origin, this.position);
+
+        this.calibration_element.remove();
+        this.calibration_element = null;
+        
+        this.setup_calibrate_side_x();
+    }
+
+    private on_calibrate_side_x()
+    {
+        if(this.calibration_element == null)
+        {
+            return;
+        }
+
+        vec3.copy(this.calibration_side_x, this.position);
+
+        this.calibration_element.remove();
+        this.calibration_element = null;
+        this.calibration_complete = true;
+    }
+
+    private on_close_internal()
+    {
+        if(this.on_close == null)
+        {
+            return;   
+        }
+
+        this.on_close();
     }
 }

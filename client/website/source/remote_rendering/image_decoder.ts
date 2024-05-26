@@ -41,13 +41,23 @@ export class ImageDecoder
 
     create() : boolean
     {
-        const video_parameters : VideoDecoderInit =
+        try
         {
-            output: this.on_interal_decoded.bind(this),
-            error: this.on_interal_error.bind(this)
-        };
+            const video_parameters : VideoDecoderInit =
+            {
+                output: this.on_interal_decoded.bind(this),
+                error: this.on_interal_error.bind(this)
+            };
+    
+            this.video_decoder = new VideoDecoder(video_parameters);
+        }
 
-        this.video_decoder = new VideoDecoder(video_parameters);
+        catch(error)
+        {
+            log_error("[ImageDecoder] Can't create video deocder or feature not supported!");
+
+            return false;
+        }
         
         return true;
     }
@@ -87,7 +97,7 @@ export class ImageDecoder
     {
         if(this.video_decoder == null)
         {
-            return false;   
+            return false;
         }
 
         if(!this.is_configured)
@@ -161,8 +171,8 @@ export class ImageDecoder
         this.gl.bindTexture(this.gl.TEXTURE_2D, frame.image);
         this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA, this.gl.UNSIGNED_BYTE, video_frame);
 
-        this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
-        this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST);
+        this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR);
+        this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.LINEAR);
         this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.CLAMP_TO_EDGE);
         this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.CLAMP_TO_EDGE);
 

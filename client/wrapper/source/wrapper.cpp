@@ -89,6 +89,12 @@ struct LayerResponseForm
     std::array<uint32_t, SHARED_VIEW_COUNT_MAX> index_counts;
 };
 
+struct Geometry
+{
+    emscripten::val indices;
+    emscripten::val vertices;
+};
+
 template<class Type>
 emscripten::val build_array(const Type& packet)
 {
@@ -268,20 +274,17 @@ std::vector<shared::Index> local_indices;
 std::vector<shared::Vertex> local_vertices;
 
 //Assumes that data, indices and vertices are Uint8Arrays
-bool decode_geoemtry(emscripten::val data, emscripten::val indices, emscripten::val vertices)
+std::optional<Geometry> decode_geoemtry(emscripten::val data, emscripten::val indices, emscripten::val vertices)
 {
     const std::vector<uint8_t> local_data = emscripten::convertJSArrayToNumberVector<uint8_t>(data); //copy here
 
     if (!shared::GeometryCodec::decode(local_data, local_indices, local_vertices))
     {
-        return false;
+        return std::optional<Geometry>();
     }
 
     uint32_t index_bytes = sizeof(shared::Index) * local_indices.size();
     uint32_t vertex_bytes = sizeof(shared::Vertex) * local_vertices.size();
-
-    emscripten::val local_index_view = emscripten::val(emscripten::typed_memory_view(index_bytes, (uint8_t*)local_indices.data()));
-    emscripten::val local_vertex_view = emscripten::val(emscripten::typed_memory_view(vertex_bytes, (uint8_t*)local_vertices.data()));
 
     emscripten::val index_buffer = indices["buffer"];
     emscripten::val vertex_buffer = vertices["buffer"];
@@ -289,30 +292,35 @@ bool decode_geoemtry(emscripten::val data, emscripten::val indices, emscripten::
     uint32_t index_buffer_size = index_buffer["byteLength"].as<uint32_t>();
     uint32_t vertex_buffer_size = vertex_buffer["byteLength"].as<uint32_t>();
 
+    Geometry geometry;
+
     if(index_buffer_size < index_bytes)
     {
-        indices.set(emscripten::val::global("Uint8Array").new_(index_bytes));
+        geometry.indices = emscripten::val::global("Uint8Array").new_(index_bytes);
     }
 
     else
     {
-        indices.set(emscripten::val::global("Uint8Array").new_(index_buffer, 0, index_bytes));
+        geometry.indices = emscripten::val::global("Uint8Array").new_(index_buffer, 0, index_bytes);
     }
 
     if(vertex_buffer_size < vertex_bytes)
     {
-        vertices.set(emscripten::val::global("Uint8Array").new_(vertex_bytes));
+        geometry.vertices = emscripten::val::global("Uint8Array").new_(vertex_bytes);
     }
 
     else
     {
-        vertices.set(emscripten::val::global("Uint8Array").new_(vertex_buffer, 0, vertex_bytes));
+        geometry.vertices = emscripten::val::global("Uint8Array").new_(vertex_buffer, 0, vertex_bytes);
     }
 
-    indices.call<void>("set", local_index_view, 0);   //copy here
-    vertices.call<void>("set", local_vertex_view, 0); //copy here
+    emscripten::val local_index_view = emscripten::val(emscripten::typed_memory_view(index_bytes, (uint8_t*)local_indices.data()));
+    emscripten::val local_vertex_view = emscripten::val(emscripten::typed_memory_view(vertex_bytes, (uint8_t*)local_vertices.data()));
 
-    return true;
+    geometry.indices.call<void>("set", local_index_view, 0);   //copy here
+    geometry.vertices.call<void>("set", local_vertex_view, 0); //copy here
+
+    return geometry;
 }
 
 EMSCRIPTEN_BINDINGS(wrapper) 
@@ -487,6 +495,12 @@ EMSCRIPTEN_BINDINGS(wrapper)
         .field("view_matrices", &LayerResponseForm::view_matrices)
         .field("vertex_counts", &LayerResponseForm::vertex_counts)
         .field("index_counts", &LayerResponseForm::index_counts);
+
+    emscripten::value_object<Geometry>("Geometry")
+        .field("indices", &Geometry::indices)
+        .field("vertices", &Geometry::vertices);
+
+    emscripten::register_optional<Geometry>();
 
     emscripten::function("default_mesh_settings", &default_mesh_settings);
     emscripten::function("default_video_settings", &default_video_settings);

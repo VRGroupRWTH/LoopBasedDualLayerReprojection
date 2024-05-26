@@ -105,7 +105,7 @@ export class GeometryDecoder
     {
         if(this.worker == null)
         {
-            return false;   
+            return false;  
         }
 
         const task = new GeometryDecodeTask(frame.request_id, data, frame.indices, frame.vertices);

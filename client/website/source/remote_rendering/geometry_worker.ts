@@ -18,10 +18,15 @@ class GeometryWorker
         const indices = event.data.indices;
         const vertices = event.data.vertices;
 
-        if(!this.wrapper.decode_geoemtry(data, indices, vertices))
+        const geometry = this.wrapper.decode_geoemtry(data, indices, vertices);
+
+        if(geometry == undefined)
         {
             throw new Error("Can't decode geometry!");
         }
+
+        event.data.indices = geometry.indices;
+        event.data.vertices = geometry.vertices;
 
         postMessage(event.data, [data.buffer, indices.buffer, vertices.buffer]);
     }

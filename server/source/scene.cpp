@@ -14,7 +14,7 @@ bool Scene::create(const std::string& scene_file_name, float scale, float exposu
     spdlog::info("Scene: Loading scene '{}'", scene_file_name);
 
     Assimp::Importer importer;
-    const aiScene* scene = importer.ReadFile(scene_file_name.c_str(), aiProcess_PreTransformVertices | aiProcess_Triangulate | aiProcess_JoinIdenticalVertices | aiProcess_MakeLeftHanded | aiProcess_CalcTangentSpace | aiProcess_FlipUVs | aiProcess_GenSmoothNormals);
+    const aiScene* scene = importer.ReadFile(scene_file_name.c_str(), aiProcess_PreTransformVertices | aiProcess_Triangulate | aiProcess_JoinIdenticalVertices | aiProcess_CalcTangentSpace | aiProcess_FlipUVs | aiProcess_GenSmoothNormals);
 
     if (scene == nullptr)
     {
@@ -1630,8 +1630,7 @@ void Scene::compute_light(const Light& light, uint32_t array_index)
     
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
-    glFrontFace(GL_CW);
-
+    
     glViewport(0, 0, SCENE_LIGHT_BUFFER_RESOLUTION, SCENE_LIGHT_BUFFER_RESOLUTION);
 
     glClearDepth(1.0f);
@@ -1690,7 +1689,6 @@ void Scene::compute_light(const Light& light, uint32_t array_index)
     glBindTexture(GL_TEXTURE_2D, 0);
     glActiveTexture(GL_TEXTURE0);
 
-    glFrontFace(GL_CCW);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
 

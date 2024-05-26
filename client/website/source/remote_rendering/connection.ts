@@ -1,8 +1,4 @@
-import { log_debug, log_error } from "./log";
 import { SessionCreateForm, SessionDestroyForm, RenderRequestForm, MeshSettingsForm, VideoSettingsForm, LayerResponseForm, WrapperModule } from "./wrapper";
-
-//Don't change this url. Use the parameters in the vite config!
-const CONNECTION_URL = "ws://localhost:" + client_port + "/asd";
 
 export async function receive_scenes() : Promise<string[]>
 {
@@ -94,7 +90,16 @@ export class Connection
 
     create() : boolean
     {
-        this.socket = new WebSocket(CONNECTION_URL);
+        let port = "";
+
+        if(window.location.port != "")
+        {
+            port = ":" + window.location.port;
+        }
+
+        let url = "wss://" + window.location.hostname + port + "/server-socket";
+
+        this.socket = new WebSocket(url);
         this.socket.binaryType = "arraybuffer";
         this.socket.onmessage = this.on_packet.bind(this);
 
@@ -219,7 +224,7 @@ export class Connection
         switch(packet_type)
         {
         case this.wrapper.PacketType.PACKET_TYPE_LAYER_RESPONSE:
-            this.on_internal_layer_response(data);
+            this.on_layer_response_internal(data);
             break;
         default:
             this.on_close?.();
@@ -227,7 +232,7 @@ export class Connection
         }
     }
 
-    private on_internal_layer_response(data : Uint8Array)
+    private on_layer_response_internal(data : Uint8Array)
     {
         let form = this.wrapper.parse_layer_response_packet(data);
 

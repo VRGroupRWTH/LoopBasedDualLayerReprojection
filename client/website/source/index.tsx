@@ -1,13 +1,17 @@
-import { Component } from "solid-js";
+import { Component, Show, createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { Route, Router } from "@solidjs/router";
 import { glMatrix } from "gl-matrix";
-import RemoteRendering, { WrapperModule, SessionConfig, SessionMode, load_wrapper_module, MeshGeneratorType } from "./remote_rendering";
+import RemoteRendering, { WrapperModule, SessionConfig, SessionMode, load_wrapper_module } from "./remote_rendering";
+import { DisplayType } from "./remote_rendering/display";
+import { Button } from "solid-bootstrap";
 
 import "../assets/styles.scss";
 
 const App : Component<{wrapper : WrapperModule}> = (props) =>
 {
+    const [show, set_show] = createSignal(false);
+
     glMatrix.setMatrixArrayType(Array);
 
     props.wrapper.default_mesh_settings()
@@ -17,9 +21,9 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
         mode: SessionMode.Capture,
         output_path: "/test",
         animation_file_name: "",
-        resolution_width: 512,
-        resolution_height: 512,
-        layer_count: 1,
+        resolution_width: 1024,
+        resolution_height: 1024,
+        layer_count: 2,
         render_request_rate: 500,
         mesh_generator: props.wrapper.MeshGeneratorType.MESH_GENERATOR_TYPE_LOOP,
         mesh_settings: props.wrapper.default_mesh_settings(),
@@ -40,7 +44,18 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
 
     return (
         <Router>
-            <Route path="/" component={() => <RemoteRendering wrapper={props.wrapper} config={config} on_close={test}></RemoteRendering>} />
+            <Route path="/" component={() => 
+            <div>
+                <Show when={!show()}>
+                    <Button onClick={() => set_show(true)}>
+                        Start
+                    </Button>
+                </Show>
+                <Show when={show()}>
+                    <RemoteRendering wrapper={props.wrapper} config={config} on_close={test} preferred_display={DisplayType.AR}></RemoteRendering>
+                </Show>
+            </div>}
+                 />
         </Router>
     );
 };

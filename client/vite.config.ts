@@ -1,8 +1,9 @@
 import { defineConfig } from 'vite';
 import solidPlugin from 'vite-plugin-solid';
+import basicSsl from '@vitejs/plugin-basic-ssl'
 import path from "path";
 
-const server_ip = "localhost";
+const server_ip = "192.168.1.150";
 const server_port = 9000;
 const client_port = 3000;
 
@@ -11,7 +12,8 @@ export default defineConfig(
     root: "./website",
     plugins:
     [
-        solidPlugin()
+        solidPlugin(),
+        basicSsl()
     ],
     define: 
     {
@@ -38,12 +40,12 @@ export default defineConfig(
                 changeOrigin: true,
                 rewrite: path => path.replace(/^\/server/, '')
             },
-            "/asd":
+            "/server-socket":
             {
                 target: "ws://" + server_ip + ":" + server_port,
                 changeOrigin: true,
                 ws: true,
-                rewrite: path => path.replace(/^\/asd/, '')
+                rewrite: path => path.replace(/^\/server-socket/, '')
             }
         },
         watch:
