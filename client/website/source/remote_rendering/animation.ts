@@ -24,7 +24,7 @@ interface AnimationKeyFrame
 export class Animation
 {
     private key_frames : AnimationKeyFrame[] = [];
-    private start_time = 0.0;
+    private time_origin = 0.0;
 
     async load(animation_path : string) : Promise<boolean>
     {
@@ -68,14 +68,14 @@ export class Animation
         return true;
     }
 
-    reset()
+    set_time_origin(time_origin : number)
     {
-        this.start_time = performance.now();
+        this.time_origin = time_origin;
     }
 
     add_transform(transform : AnimationTransform)
     {
-        const time = performance.now() - this.start_time;
+        const time = performance.now() - this.time_origin;
 
         const src_position = vec3.create();
         mat4.getTranslation(src_position, transform.src_transform);
@@ -109,7 +109,7 @@ export class Animation
             return new AnimationTransform(src_transform, dst_transform);
         }
 
-        const time = performance.now() - this.start_time;
+        const time = performance.now() - this.time_origin;
         let key_frame1 = this.key_frames[0];
         let key_frame2 = this.key_frames[0];
 
@@ -163,9 +163,19 @@ export class Animation
         return new AnimationTransform(src_transform, dst_transform);
     }
 
+    get_frame_count() : number
+    {
+        return this.key_frames.length;
+    }
+
+    get_time_origin() : number
+    {
+        return this.time_origin;
+    }
+
     has_finished() : boolean
     {
-        const time = performance.now() - this.start_time;
+        const time = performance.now() - this.time_origin;
         const key_frame = this.key_frames.at(-1);
 
         if(key_frame == null)
@@ -174,10 +184,5 @@ export class Animation
         }
 
         return key_frame.time < time;
-    }
-
-    get_frame_count() : number
-    {
-        return this.key_frames.length;
     }
 }

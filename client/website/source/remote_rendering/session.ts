@@ -1,5 +1,5 @@
 import { Animation, AnimationTransform } from "./animation";
-import { Connection, send_image } from "./connection";
+import { Connection, send_file, send_image } from "./connection";
 import { Display, DisplayType, build_display } from "./display";
 import { Frame, Layer, LAYER_VIEW_COUNT } from "./frame";
 import { GeometryDecoder, GeometryFrame } from "./geometry_decoder";
@@ -363,8 +363,14 @@ export class Session
             this.request_interval = setInterval(this.on_request.bind(this), this.config.render_request_rate);
         }
 
-        this.animation_input.reset();
-        this.animation_output.reset();
+        const time_origin = performance.now();
+        this.animation_input.set_time_origin(time_origin);
+        this.animation_output.set_time_origin(time_origin);
+
+        const text_encoder = new TextEncoder();
+        const session_settings = text_encoder.encode(JSON.stringify(session_create));
+
+        send_file(this.config.output_path + "session_settings.json", session_settings);
     }
 
     private on_request()
@@ -793,6 +799,12 @@ export class Session
 
     private async on_shutdown()
     {
+        if(this.gl != null)
+        {
+            this.gl.clearColor(1.0, 1.0, 1.0, 1.0);   
+            this.gl.clear(this.gl.COLOR_BUFFER_BIT);
+        }
+
         if(this.config.mode == SessionMode.Capture)
         {
             await this.animation_output.store(this.config.output_path + "animation_capture.json");
@@ -803,15 +815,9 @@ export class Session
             await this.animation_output.store(this.config.output_path + "animation_benchmark.json");   
         }
 
-        log_error("Some Error!");
-
         if(this.on_close != null)
         {
             this.on_close();    
         }
-
-        //Save everything
-
-        //Catch all cases that lead to a termination of the application
     }
 }

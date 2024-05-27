@@ -5,7 +5,7 @@ export class GeometryFrame
 {
     request_id : number = 0;
     decode_start : number = 0.0;
-    deocde_end : number = 0.0;
+    decode_end : number = 0.0;
 
     indices : Uint8Array = new Uint8Array(0);
     index_buffer : WebGLBuffer;
@@ -111,6 +111,8 @@ export class GeometryDecoder
             return false;  
         }
 
+        frame.decode_start = performance.now();
+
         const task = new GeometryDecodeTask(frame.request_id, data, frame.indices, frame.vertices);
         this.worker.postMessage(task, [task.data.buffer, task.indices.buffer, task.vertices.buffer]);
 
@@ -153,6 +155,7 @@ export class GeometryDecoder
         const frame = this.frame_queue.splice(frame_index, 1)[0];
         frame.indices = task.indices;
         frame.vertices = task.vertices;
+        frame.decode_end = performance.now();
 
         if(frame.index_buffer_size < frame.indices.byteLength)
         {

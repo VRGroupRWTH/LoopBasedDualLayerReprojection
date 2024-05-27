@@ -121,6 +121,8 @@ export class ImageDecoder
             this.is_configured = true;
         }
 
+        frame.decode_start = performance.now();
+
         const chunk : EncodedVideoChunkInit = 
         {
             type: "key",
@@ -130,7 +132,6 @@ export class ImageDecoder
 
         this.video_decoder.decode(new EncodedVideoChunk(chunk));
     
-        frame.decode_start = performance.now();
         this.frame_queue.push(frame);
 
         return true;
