@@ -14,9 +14,13 @@ namespace shared
     // [POST] /files/<directory_path>/<file_name>?type=log   > Writes the given information to the file specified by the directory path and the file name. 
     //                                                          Files and directorys are created if they do not exist.
     //                                                          In case the file already exists, the given information is appended.
+    // [POST] /files/<directory_path>/<file_name>?type=file   > Writes the given information to the file specified by the directory path and the file name. 
+    //                                                          Files and directorys are created if they do not exist.
+    //                                                          In case the file already exists, the old file is renamed and a new file is created.
     // [POST] /files/<directory_path>/<file_name>?type=image > Writes the given image to the file specified by the directory path and the file name. 
     //                                                          Files and directorys are created if they do not exist. 
-    //                                                          The server expects in binary the width (uint32_t), the height (uint32_t) and the content of the image (RGB uint8_t per channel).
+    //                                                          In case the file already exists, the old file is renamed and a new file is created.
+    //                                                          The server expects in binary the width (uint32_t), the height (uint32_t) and the content of the image (RGBA uint8_t per channel).
     
     enum PacketType : uint32_t
     {
@@ -94,8 +98,6 @@ namespace shared
         uint32_t request_id = 0;
         uint32_t layer_index = 0;
 
-        uint32_t geometry_width = 0;
-        uint32_t geometry_height = 0;
         uint32_t geometry_bytes = 0;
         uint32_t image_bytes = 0;
 

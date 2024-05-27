@@ -3,7 +3,7 @@ import solidPlugin from 'vite-plugin-solid';
 import basicSsl from '@vitejs/plugin-basic-ssl'
 import path from "path";
 
-const server_ip = "192.168.1.150";
+const server_ip = "192.168.178.22";
 const server_port = 9000;
 const client_port = 3000;
 

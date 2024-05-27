@@ -54,12 +54,21 @@ export async function send_log(file_path : string, content : Uint8Array)
     });
 }
 
+export async function send_file(file_path : string, content : Uint8Array)
+{
+    fetch("/server/files/" + file_path + "?type=file",
+    {
+        method: "POST",
+        body: content
+    });
+}
+
 export async function send_image(file_path : string, width : number, height : number, content : Uint8Array)
 {
     let body = new Uint8Array(8 + content.byteLength);
     body.set(content, 8);
 
-    let dimensions = new Uint32Array(body, 0, 2);
+    let dimensions = new Uint32Array(body.buffer, 0, 2);
     dimensions[0] = width;
     dimensions[1] = height;
     
@@ -137,6 +146,10 @@ export class Connection
             this.socket.close();
             this.socket = null;
         }
+
+        this.on_open = null;
+        this.on_layer_response = null;
+        this.on_close = null;
     }
 
     send_session_create(form : SessionCreateForm) : boolean

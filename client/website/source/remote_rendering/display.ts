@@ -14,7 +14,7 @@ export interface Display
 {
     create(calibrate : boolean) : Promise<boolean>;
     destroy() : void;
-    show() : void;
+    show() : Promise<void>; //Only after the promise resolves, all parameters of the display are valid
 
     set_on_render(callback : OnDisplayRender) : void;
     set_on_close(callback : OnDisplayClose) : void;
@@ -126,13 +126,16 @@ class DesktopDisplay
         {
             clearInterval(this.view_interval);   
         }
+
+        this.on_render = null;
+        this.on_close = null;
     }
 
-    show()
+    show() : Promise<void>
     {
         if(this.frame_request != null)
         {
-            return;
+            return Promise.resolve();
         }
 
         const render_function = () =>
@@ -151,6 +154,8 @@ class DesktopDisplay
         };
 
         this.frame_request = requestAnimationFrame(render_function.bind(this));
+
+        return Promise.resolve();
     }
 
     set_on_render(callback : OnDisplayRender)
@@ -514,40 +519,50 @@ class ARDisplay
             this.close_button_element = null;
             this.calibration_element = null;
         }
+
+        this.on_render = null;
+        this.on_close = null;
     }
 
-    show()
+    show() : Promise<void>
     {
         if(this.frame_request != null)
         {
-            return;
+            return Promise.resolve();
         }
 
-        const render_function = (time: number, frame: XRFrame) =>
+        const setup_complete = new Promise<void>(resolve =>
         {
-            const base_layer = this.session.renderState.baseLayer;
-            this.resolution[0] = base_layer.framebufferWidth;
-            this.resolution[1] = base_layer.framebufferHeight;
-
-            this.compute_projection_matrix(frame);
-            this.compute_view_matrix(frame);
-
-            if(this.on_render != null)
+            const render_function = (time: number, frame: XRFrame) =>
             {
-                this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, base_layer.framebuffer);
-                this.on_render();
-                this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
+                const base_layer = this.session.renderState.baseLayer;
+                this.resolution[0] = base_layer.framebufferWidth;
+                this.resolution[1] = base_layer.framebufferHeight;
+    
+                this.compute_projection_matrix(frame);
+                this.compute_view_matrix(frame);
+    
+                if(this.on_render != null)
+                {
+                    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, base_layer.framebuffer);
+                    this.on_render();
+                    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
+    
+                    this.frame_request = this.session.requestAnimationFrame(render_function);
+                }
+    
+                else
+                {
+                    this.frame_request = null;
+                }
 
-                this.frame_request = this.session.requestAnimationFrame(render_function);
-            }
+                resolve();
+            };
+    
+            this.frame_request = this.session.requestAnimationFrame(render_function);
+        });
 
-            else
-            {
-                this.frame_request = null;
-            }
-        };
-
-        this.frame_request = this.session.requestAnimationFrame(render_function);
+        return setup_complete;
     }
 
     set_on_render(callback : OnDisplayRender)

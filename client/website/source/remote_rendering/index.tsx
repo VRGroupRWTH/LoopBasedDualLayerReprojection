@@ -20,6 +20,8 @@ const RemoteRendering : Component<RemoteRenderingProps> = (props) =>
 
     function on_session_close()
     {
+        session()?.destroy();
+
         props.on_close();
     }
 

@@ -1,5 +1,5 @@
 import { mat4, quat, vec3 } from "gl-matrix";
-import { receive_file, send_log } from "./connection";
+import { receive_file, send_file } from "./connection";
 
 export class AnimationTransform
 {
@@ -63,7 +63,7 @@ export class Animation
         const text_encoder = new TextEncoder();
         const file_buffer = text_encoder.encode(key_frame_string);
 
-        await send_log(animation_path, file_buffer);
+        await send_file(animation_path, file_buffer);
 
         return true;
     }
@@ -174,5 +174,10 @@ export class Animation
         }
 
         return key_frame.time < time;
+    }
+
+    get_frame_count() : number
+    {
+        return this.key_frames.length;
     }
 }

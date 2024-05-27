@@ -142,17 +142,17 @@ void WorkerPool::worker_mesh(uint32_t view)
         {
             if (export_request.color_file_name.has_value())
             {
-                std::string file_name = this->get_export_file_name(export_request.color_file_name.value(), view);
+                std::string file_name = this->get_export_file_name(export_request.color_file_name.value(), frame->layer_index, view);
 
                 glm::uvec2 image_resolution = frame->resolution;
-                uint32_t image_size = image_resolution.x * image_resolution.y * sizeof(glm::u8vec3);
+                uint32_t image_size = image_resolution.x * image_resolution.y * sizeof(glm::u8vec4);
 
                 export_color_image(file_name, image_resolution, frame->color_export_pointers[view], image_size);
             }
 
             if (export_request.depth_file_name.has_value())
             {
-                std::string file_name = this->get_export_file_name(export_request.depth_file_name.value(), view);
+                std::string file_name = this->get_export_file_name(export_request.depth_file_name.value(), frame->layer_index, view);
 
                 glm::uvec2 image_resolution = frame->resolution;
                 uint32_t image_size = image_resolution.x * image_resolution.y * sizeof(float);
@@ -162,16 +162,16 @@ void WorkerPool::worker_mesh(uint32_t view)
 
             if (export_request.mesh_file_name.has_value())
             {
-                std::string file_name = this->get_export_file_name(export_request.mesh_file_name.value(), view);
+                std::string file_name = this->get_export_file_name(export_request.mesh_file_name.value(), frame->layer_index, view);
 
-                export_mesh(file_name, layer_data->vertices[view], layer_data->indices[view], frame->view_matrix[view], frame->projection_matrix, frame->resolution);
+                export_mesh(file_name, layer_data->vertices[view], layer_data->indices[view], frame->view_matrix[view], frame->projection_matrix, frame->resolution + glm::uvec2(1));
             }
 
             if (export_request.feature_lines_file_name.has_value())
             {
-                std::string file_name = this->get_export_file_name(export_request.feature_lines_file_name.value(), view);
+                std::string file_name = this->get_export_file_name(export_request.feature_lines_file_name.value(), frame->layer_index, view);
 
-                export_feature_lines(file_name, feature_lines);
+                export_feature_lines(file_name, feature_lines, frame->resolution + glm::uvec2(1));
             }
 
             feature_lines.clear();
@@ -271,10 +271,17 @@ void WorkerPool::worker_submit()
     }
 }
 
-std::string WorkerPool::get_export_file_name(const std::string& request_file_name, uint32_t view)
+std::string WorkerPool::get_export_file_name(const std::string& request_file_name, uint32_t layer, uint32_t view)
 {
-    std::filesystem::path file_name = std::filesystem::path(this->server->get_study_directory()) / request_file_name;
-    file_name.replace_filename(file_name.filename().string() + "_view_" + std::to_string(view));
+    std::string relative_path = request_file_name;
+
+    while (relative_path.front() == '/' || relative_path.front() == '\\')
+    {
+        relative_path.erase(relative_path.begin());
+    }
+
+    std::filesystem::path file_name = std::filesystem::path(this->server->get_study_directory()) / relative_path;
+    file_name.replace_filename(file_name.stem().string() + "_layer_" + std::to_string(layer) + "_view_" + std::to_string(view) + file_name.extension().string());
 
     return file_name.string();
 }

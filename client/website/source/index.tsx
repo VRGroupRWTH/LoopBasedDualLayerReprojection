@@ -19,8 +19,8 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
     let config : SessionConfig =
     {
         mode: SessionMode.Capture,
-        output_path: "/test",
-        animation_file_name: "",
+        output_path: "/test2/",
+        animation_file_name: "/test/animation_benchmark.json",
         resolution_width: 1024,
         resolution_height: 1024,
         layer_count: 2,

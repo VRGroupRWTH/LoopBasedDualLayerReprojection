@@ -44,6 +44,8 @@ bool export_color_image(const std::string& file_name, const glm::uvec2& resoluti
 		spdlog::warn("Export: Would have overwritten file!");
 	}
 
+	std::filesystem::create_directories(std::filesystem::path(file_name).parent_path());
+
 	std::fstream file(file_name, std::ios::out | std::ios::binary);
 
 	if (!file.good())
@@ -53,7 +55,7 @@ bool export_color_image(const std::string& file_name, const glm::uvec2& resoluti
 		return false;
 	}
 
-	uint32_t required_size = resolution.x * resolution.y * sizeof(glm::u8vec3);
+	uint32_t required_size = resolution.x * resolution.y * sizeof(glm::u8vec4);
 
 	if (size != required_size)
 	{
@@ -62,11 +64,25 @@ bool export_color_image(const std::string& file_name, const glm::uvec2& resoluti
 		return false;
 	}
 
+	uint32_t image_size = resolution.x * resolution.y * sizeof(glm::u8vec3);
+	std::vector<uint8_t> image_data(image_size);
+
+	uint32_t dst_offset = 0;
+	uint32_t src_offset = 0;
+
+	while(dst_offset < image_size) //Convert from RGBA to RGB
+	{
+		image_data[dst_offset++] = data[src_offset++];
+		image_data[dst_offset++] = data[src_offset++];
+		image_data[dst_offset++] = data[src_offset++];
+		src_offset++;
+	}
+
 	file << "P6" << std::endl;
 	file << resolution.x << " " << resolution.y << std::endl;
 	file << "255" << std::endl;
 
-	file.write((char*)data, size);
+	file.write((char*)image_data.data(), image_size);
 
 	file.close();
 
@@ -86,6 +102,8 @@ bool export_depth_image(const std::string& file_name, const glm::uvec2& resoluti
 	{
 		spdlog::warn("Export: Would have overwritten file!");
 	}
+
+	std::filesystem::create_directories(std::filesystem::path(file_name).parent_path());
 
 	std::fstream file(file_name, std::ios::out | std::ios::binary);
 
@@ -129,6 +147,8 @@ bool export_mesh(const std::string& file_name, const std::vector<shared::Vertex>
 	{
 		spdlog::warn("Export: Would have overwritten file!");
 	}
+
+	std::filesystem::create_directories(std::filesystem::path(file_name).parent_path());
 
 	std::fstream file(file_name, std::ios::out);
 
@@ -178,7 +198,7 @@ bool export_mesh(const std::string& file_name, const std::vector<shared::Vertex>
 	return true;
 }
 
-bool export_feature_lines(const std::string& file_name, const std::vector<MeshFeatureLine>& feature_lines)
+bool export_feature_lines(const std::string& file_name, const std::vector<MeshFeatureLine>& feature_lines, const glm::uvec2& resolution)
 {
 	if (!file_name.ends_with(".obj"))
 	{
@@ -192,6 +212,8 @@ bool export_feature_lines(const std::string& file_name, const std::vector<MeshFe
 		spdlog::warn("Export: Would have overwritten file!");
 	}
 
+	std::filesystem::create_directories(std::filesystem::path(file_name).parent_path());
+
 	std::fstream file(file_name, std::ios::out);
 
 	if (!file.good())
@@ -200,6 +222,8 @@ bool export_feature_lines(const std::string& file_name, const std::vector<MeshFe
 
 		return false;
 	}
+
+	file << "# resolution " << resolution.x << " " << resolution.y << std::endl;
 
 	for (const MeshFeatureLine& feature_line : feature_lines)
 	{

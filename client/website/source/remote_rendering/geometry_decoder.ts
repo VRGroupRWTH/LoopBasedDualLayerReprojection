@@ -73,6 +73,9 @@ export class GeometryDecoder
             this.worker.terminate();   
             this.worker = null;
         }
+
+        this.on_decoded = null;
+        this.on_error = null;
     }
 
     create_frame() : GeometryFrame | null

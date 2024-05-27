@@ -878,7 +878,7 @@ bool Encoder::map_frame(EncoderFrame* frame)
             frame->output_buffer = output.output_buffer;
             frame->output_buffer_size = output.output_buffer_size;
             frame->encode_end = output.encode_end;
-            frame->time_encode = std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(frame->encode_start - output.encode_end).count();
+            frame->time_encode = std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(output.encode_end - frame->encode_start).count();
 
             this->worker_output.erase(this->worker_output.begin() + index);
             complete = true;

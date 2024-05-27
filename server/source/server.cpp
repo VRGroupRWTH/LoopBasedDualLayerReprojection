@@ -110,10 +110,6 @@ void Server::submit_layer_data(LayerData* layer_data)
         packet->geometry_bytes = layer_data->geometry.size();
         packet->image_bytes = layer_data->image.size();
 
-        spdlog::warn("TODO: Implement geometry width and height. Besides that add it to the exporing process!");
-        packet->geometry_width = 0;
-        packet->geometry_height = 0;
-
         packet->view_metadata = layer_data->view_metadata;
         packet->view_matrices = layer_data->view_matrices;
 
@@ -435,12 +431,27 @@ void Server::process_post_files(HttpResponse* response, HttpRequest* request)
     std::filesystem::path file_path = std::filesystem::path(this->study_directory) / request_path;
     std::string_view request_type = request->getQuery("type");
 
-    if (request_type == "log")
+    if (request_type == "log" || request_type == "file")
     {
         std::filesystem::create_directories(file_path.parent_path());
 
-        std::fstream file(file_path, std::ios::out | std::ios::binary | std::ios::app);
+        std::fstream file;
+        
+        if (request_type == "log")
+        {
+            file.open(file_path, std::ios::out | std::ios::binary | std::ios::app);
+        }
 
+        else if (request_type == "file")
+        {
+            if (!prevent_override(file_path.string()))
+            {
+                spdlog::warn("Export: Would have overwritten file!");
+            }
+
+            file.open(file_path, std::ios::out | std::ios::binary);
+        }
+    
         if (!file.good())
         {
             response->writeStatus("400 Bad Request");
@@ -482,7 +493,7 @@ void Server::process_post_files(HttpResponse* response, HttpRequest* request)
             {
                 uint32_t image_width = *(uint32_t*)buffer.data();
                 uint32_t image_height = *((uint32_t*)buffer.data() + 1);
-                uint32_t image_size = image_width * image_height * sizeof(glm::u8vec3);
+                uint32_t image_size = image_width * image_height * sizeof(glm::u8vec4);
                 uint8_t* image_data = buffer.data() + sizeof(uint32_t) * 2;
 
                 if (export_color_image(file_path.string(), glm::uvec2(image_width, image_height), image_data, image_size) == 0)

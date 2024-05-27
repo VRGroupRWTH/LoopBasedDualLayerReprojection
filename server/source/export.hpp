@@ -9,9 +9,10 @@
 
 #include "mesh_generator/mesh_generator.hpp"
 
+bool prevent_override(const std::string& file_name);
 bool export_color_image(const std::string& file_name, const glm::uvec2& resolution, uint8_t* data, uint32_t size);
 bool export_depth_image(const std::string& file_name, const glm::uvec2& resolution, uint8_t* data, uint32_t size);
 bool export_mesh(const std::string& file_name, const std::vector<shared::Vertex>& vertices, const std::vector<shared::Index>& indices, const glm::mat4& view_matrix, const glm::mat4& projection_matrix, const glm::uvec2& resolution);
-bool export_feature_lines(const std::string& file_name, const std::vector<MeshFeatureLine>& feature_lines);
+bool export_feature_lines(const std::string& file_name, const std::vector<MeshFeatureLine>& feature_lines, const glm::uvec2& resolution);
 
 #endif

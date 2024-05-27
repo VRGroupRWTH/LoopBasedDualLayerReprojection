@@ -219,6 +219,8 @@ export class Frame
             
             layer.image_complete = false;
             layer.geometry_complete = false;
+
+            layer.form = null;
         }
     }
 

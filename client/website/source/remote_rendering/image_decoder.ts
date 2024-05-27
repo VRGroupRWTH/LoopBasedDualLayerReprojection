@@ -69,6 +69,9 @@ export class ImageDecoder
             this.video_decoder.close();
             this.video_decoder = null;   
         }
+
+        this.on_decoded = null;
+        this.on_error = null;
     }
 
     create_frame() : ImageFrame | null
@@ -126,11 +129,21 @@ export class ImageDecoder
         };
 
         this.video_decoder.decode(new EncodedVideoChunk(chunk));
-
+    
         frame.decode_start = performance.now();
         this.frame_queue.push(frame);
 
         return true;
+    }
+
+    flush_frames()
+    {
+        if(this.video_decoder == null)
+        {
+            return;   
+        }
+
+        this.video_decoder.flush();
     }
 
     set_on_decoded(callback : OnImageDecoderDecoded)

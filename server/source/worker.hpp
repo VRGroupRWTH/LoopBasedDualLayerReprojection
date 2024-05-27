@@ -65,7 +65,7 @@ private:
     void worker_mesh(uint32_t view);
     void worker_submit();
 
-    std::string get_export_file_name(const std::string& request_file_name, uint32_t view);
+    std::string get_export_file_name(const std::string& request_file_name, uint32_t layer, uint32_t view);
 };
 
 #endif

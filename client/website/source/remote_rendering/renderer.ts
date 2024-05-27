@@ -60,11 +60,9 @@ export class Renderer
         this.gl.clearColor(0.0, 0.0, 0.0, 1.0);
         this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
 
-        //TODO: !!!!!!!!!!!!!!!!!!!!!!!!!!!!! Implement depth clearing of old implementation
-
         this.layer_shader.use_shader();
 
-        for(const layer of frame.layers)
+        for(const layer of frame.layers.toReversed())
         {
             const form = layer.form;
 
@@ -92,7 +90,6 @@ export class Renderer
                 mat4.multiply(layer_matrix, view_matrix, layer_matrix);
                 mat4.multiply(layer_matrix, projection_matrix, layer_matrix);
                 
-                this.layer_shader.uniform_uvec2("geometry_resolution", vec2.fromValues(1024, 1024)); //TODO: !!!!!!!!!!!!!!!
                 this.layer_shader.uniform_mat4("layer_matrix", layer_matrix);
 
                 const view_image_offset = Layer.compute_image_offset(view_image_size, view_index);
@@ -111,6 +108,10 @@ export class Renderer
 
             this.gl.activeTexture(this.gl.TEXTURE0);
             this.gl.bindTexture(this.gl.TEXTURE_2D, null);
+
+            //Clear the depth buffer between the layer and render the layers from far to near on top of each other. 
+            //Prevents intersection of two layers
+            this.gl.clear(this.gl.DEPTH_BUFFER_BIT); 
         }
 
         this.layer_shader.use_default();

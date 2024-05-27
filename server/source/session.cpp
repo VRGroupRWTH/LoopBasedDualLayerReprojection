@@ -186,24 +186,20 @@ bool Session::render_frame(const Camera& camera, const Scene& scene, uint32_t re
             if (this->export_enabled)
             {
                 glBindBuffer(GL_PIXEL_PACK_BUFFER, current_layer->color_export_buffers[view]);
-                glBindBuffer(GL_TEXTURE_2D, current_layer->color_view_buffer);
+                glBindTexture(GL_TEXTURE_2D, current_layer->color_view_buffer);
 
-                glPixelStorei(GL_PACK_ALIGNMENT, 1);
-                glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_INT, nullptr);
-                glPixelStorei(GL_PACK_ALIGNMENT, 4);
+                glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr); //Aligned to multiple of 4
 
                 glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
-                glBindBuffer(GL_TEXTURE_2D, 0);
+                glBindTexture(GL_TEXTURE_2D, 0);
              
                 glBindBuffer(GL_PIXEL_PACK_BUFFER, current_layer->depth_export_buffers[view]);
                 glBindTexture(GL_TEXTURE_2D, current_layer->mesh_generator_frame[view]->get_depth_buffer());
                 
-                glPixelStorei(GL_PACK_ALIGNMENT, 1);
-                glGetTexImage(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
-                glPixelStorei(GL_PACK_ALIGNMENT, 4);
+                glGetTexImage(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr); //Aligned to multiple of 4
 
                 glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
-                glBindBuffer(GL_TEXTURE_2D, 0);
+                glBindTexture(GL_TEXTURE_2D, 0);
             }
         }
 
@@ -402,7 +398,7 @@ bool Session::create_frames(const glm::uvec2& resolution, uint32_t layer_count, 
             Frame* frame = new Frame;
             frame->layer_index = layer;
             frame->resolution = resolution;
-
+            
             frame->encoder_frame = this->encoders[layer]->create_frame();
 
             if (frame->encoder_frame == nullptr)
@@ -464,7 +460,7 @@ bool Session::create_frames(const glm::uvec2& resolution, uint32_t layer_count, 
 
                 if (export_enabled)
                 {
-                    uint32_t color_export_buffer_size = resolution.x * resolution.y * sizeof(glm::u8vec3);
+                    uint32_t color_export_buffer_size = resolution.x * resolution.y * sizeof(glm::u8vec4);
                     uint32_t depth_export_buffer_size = resolution.x * resolution.y * sizeof(float);
 
                     glGenBuffers(1, &frame->color_export_buffers[view]);
@@ -479,7 +475,7 @@ bool Session::create_frames(const glm::uvec2& resolution, uint32_t layer_count, 
                     glBindBuffer(GL_PIXEL_PACK_BUFFER, frame->depth_export_buffers[view]);
 
                     glBufferStorage(GL_PIXEL_PACK_BUFFER, depth_export_buffer_size, nullptr, GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT | GL_CLIENT_STORAGE_BIT);
-                    frame->color_export_pointers[view] = (uint8_t*)glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, depth_export_buffer_size, GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+                    frame->depth_export_pointers[view] = (uint8_t*)glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, depth_export_buffer_size, GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
 
                     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
                 }
