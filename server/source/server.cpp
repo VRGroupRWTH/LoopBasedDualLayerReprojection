@@ -353,7 +353,9 @@ void Server::process_get_scenes(HttpResponse* response, HttpRequest* request)
 
         if (Scene::is_file_supported(extension))
         {
-            scene_list.push_back(boost::json::string(entry.path().string()));
+            std::filesystem::path relative_path = std::filesystem::relative(entry.path().string(), this->scene_directory);
+
+            scene_list.push_back(boost::json::string(relative_path.string()));
         }
     }
 
@@ -383,9 +385,20 @@ void Server::process_get_files(HttpResponse* response, HttpRequest* request)
         {
             if (entry.is_regular_file())
             {
-                std::filesystem::path entry_path = std::filesystem::canonical(entry.path());
+                boost::json::object file;
+                file["type"] = "file";
+                file["name"] = entry.path().filename().string();
 
-                file_list.push_back(boost::json::string(entry_path.string()));
+                file_list.push_back(file);
+            }
+
+            else if (entry.is_directory())
+            {
+                boost::json::object file;
+                file["type"] = "directory";
+                file["name"] = entry.path().filename().string();
+
+                file_list.push_back(file);
             }
         }
 

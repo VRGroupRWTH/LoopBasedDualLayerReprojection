@@ -110,19 +110,19 @@ const SceneBrowser : Component<SceneBrowserProps> = (props) =>
     }
 
     return (
-        <Modal show={props.show()} >
+        <Modal size="lg" show={props.show()}>
             <ModalHeader class="text-bg-dark">
-                <h5 class="m-0" style="font-size: 1.125rem">Select Scene</h5>
+                <h5 class="m-0" style="font-size: 1.25rem">Select Scene</h5>
                 <CloseButton variant="white" onclick={event => props.set_show(false)}></CloseButton>
             </ModalHeader>
             <ModalBody>
                 <input class="form-control search-input" placeholder="Search" onInput={event => on_search(event.target)}></input>
                 <div class="my-3">
-                    <Suspense fallback={<div>Loading</div>}>
+                    <Suspense fallback={<div>Loading...</div>}>
                         <Switch>
                             <Match when={!is_empty()}>
                                 <div class="border rounded overflow-hidden">
-                                    <div class="overflow-y-scroll" style="max-height: 200px">
+                                    <div class="overflow-y-scroll" style="max-height: 300px">
                                         <ListGroup variant="flush">
                                             <Index each={scenes_filtered()}>
                                                 {(scene_file, index) => 
@@ -136,8 +136,8 @@ const SceneBrowser : Component<SceneBrowserProps> = (props) =>
                                 </div>
                             </Match>
                             <Match when={is_empty()}>
-                                <div class="d-flex align-items-center justify-content-center" style="height: 200px">
-                                    <h5 class="m-0" style="font-size: 1.125rem">No Scenes found!</h5>
+                                <div class="border rounded d-flex align-items-center justify-content-center overflow-y-scroll" style="height: 300px">
+                                    <h5 style="font-size: 1.25rem">No Scenes found!</h5>
                                 </div>
                             </Match>
                         </Switch>

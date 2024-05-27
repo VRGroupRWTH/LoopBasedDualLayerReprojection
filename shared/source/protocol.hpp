@@ -8,7 +8,7 @@ namespace shared
     // [GET]  /scenes                                        > Requests the avaliable scenes that the server could load.
     //                                                          The server will respond with a json array contaning the file names of the available scenes.
     // [GET]  /files/<directory_path>/                       > Requests the entires of the directory specified by the directory path.
-    //                                                          The server will respond with a json array containing the names of the files within the specified directory.
+    //                                                          The server will respond with a json array containing the names and types of the files within the specified directory.
     // [GET]  /files/<directory_path>/<file_name>            > Requests the file specified by the directory path and the file name.
     //                                                          The server will respond with the binary content of the specifed file.
     // [POST] /files/<directory_path>/<file_name>?type=log   > Writes the given information to the file specified by the directory path and the file name. 

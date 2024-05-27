@@ -1,5 +1,13 @@
 import { SessionCreateForm, SessionDestroyForm, RenderRequestForm, MeshSettingsForm, VideoSettingsForm, LayerResponseForm, WrapperModule } from "./wrapper";
 
+export type DirectoryFileType = "file" | "directory";
+
+export interface DirectoryFile
+{
+    type: DirectoryFileType;
+    name: string;
+}
+
 export async function receive_scenes() : Promise<string[]>
 {
     let response = await fetch("/server/scenes",
@@ -15,7 +23,7 @@ export async function receive_scenes() : Promise<string[]>
     return scene_list;
 }
 
-export async function receive_directory_files(directory_path : string) : Promise<string[]>
+export async function receive_directory_files(directory_path : string) : Promise<DirectoryFile[]>
 {
     let response = await fetch("/server/files/" + directory_path, 
     {

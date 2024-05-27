@@ -5,7 +5,6 @@ import { WrapperModule } from "./wrapper";
 import { Display } from "./display";
 import { log_error } from "./log";
 
-
 import layer_vertex_shader from "../../shaders/layer_shader.vert?raw";
 import layer_fragment_shader from "../../shaders/layer_shader.frag?raw";
 
