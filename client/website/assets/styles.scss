@@ -1,1 +1,10 @@
 @import "~bootstrap/scss/bootstrap";
+
+.search-input
+{
+    background-image: url(../assets/icons/search.svg);
+    background-repeat: no-repeat;
+    background-position: 10px center;
+    padding-left: 35px !important;
+    transition: max-width 0.05s ease-in-out, border-color .15s ease-in-out, box-shadow .15s ease-in-out !important;
+}

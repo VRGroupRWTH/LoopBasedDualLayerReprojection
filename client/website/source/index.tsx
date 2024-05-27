@@ -1,16 +1,18 @@
 import { Component, Show, createSignal } from "solid-js";
 import { render } from "solid-js/web";
+import { Button, Form } from "solid-bootstrap";
 import { Route, Router } from "@solidjs/router";
 import { glMatrix } from "gl-matrix";
-import RemoteRendering, { WrapperModule, SessionConfig, SessionMode, load_wrapper_module } from "./remote_rendering";
-import { DisplayType } from "./remote_rendering/display";
-import { Button } from "solid-bootstrap";
+import RemoteRendering, { WrapperModule, SessionConfig, DisplayType, SessionMode, load_wrapper_module } from "./remote_rendering";
+import SceneBrowser from "./components/scene_browser"
 
 import "../assets/styles.scss";
 
 const App : Component<{wrapper : WrapperModule}> = (props) =>
 {
     const [show, set_show] = createSignal(false);
+    const [hallo, set_hallo] = createSignal(false);
+    const [sele, set_sele] = createSignal("");
 
     glMatrix.setMatrixArrayType(Array);
 
@@ -44,12 +46,36 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
 
     return (
         <Router>
-            <Route path="/" component={() => 
-            <div>
+            <Route path="/" component=
+            {() => 
+            <div class="container py-5">
+
+                <div>
+                    <h4 class="border-bottom">Mesh Settings</h4>
+                    <div class="row p-4 g-4">
+                        <Form.Label class="col-2 col-form-label" for="mesh_method">Methode</Form.Label>
+                        <div class="col-10">
+                            <Form.Select id="mesh_method">
+                                <option>Line-Based</option>
+                                <option>Loop-Based</option>
+                            </Form.Select>
+                        </div>
+                        <Form.Label class="col-2 col-form-label" for="mesh_method">Depth Base Threshold</Form.Label>
+                        <div class="col-10">
+                            <Form.Range></Form.Range>
+                        </div>      
+                    </div>
+                </div>
+                
+
                 <Show when={!show()}>
                     <Button onClick={() => set_show(true)}>
                         Start
                     </Button>
+                    <Button onClick={() => set_hallo(true)}>
+                        Modal
+                    </Button>
+                    <SceneBrowser show={hallo} set_show={set_hallo} set_select={set_sele}></SceneBrowser>
                 </Show>
                 <Show when={show()}>
                     <RemoteRendering wrapper={props.wrapper} config={config} on_close={test} preferred_display={DisplayType.AR}></RemoteRendering>

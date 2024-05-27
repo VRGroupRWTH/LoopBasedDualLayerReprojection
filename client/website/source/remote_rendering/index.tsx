@@ -22,6 +22,9 @@ const RemoteRendering : Component<RemoteRenderingProps> = (props) =>
     {
         session()?.destroy();
 
+        set_canvas(undefined);
+        set_session(undefined);
+
         props.on_close();
     }
 
@@ -39,8 +42,6 @@ const RemoteRendering : Component<RemoteRenderingProps> = (props) =>
 
         if(!await session.create(props.preferred_display))
         {
-            //Show Error
-
             return;
         }
 
@@ -49,7 +50,7 @@ const RemoteRendering : Component<RemoteRenderingProps> = (props) =>
     
     onCleanup(() =>
     {
-
+        on_session_close();
     });
 
     return (
@@ -60,3 +61,6 @@ const RemoteRendering : Component<RemoteRenderingProps> = (props) =>
 export default RemoteRendering;
 export * from "./wrapper";
 export * from "./session";
+export { DisplayType } from "./display";
+export { receive_scenes, receive_directory_files, receive_file } from "./connection";
+export { log_debug, log_info, log_error } from "./log";
