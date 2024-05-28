@@ -424,23 +424,18 @@ class ARDisplay
             return false;
         }
 
-        let session_options = {};
+        this.overlay_element = document.createElement("div");
+        this.overlay_element.id = "ar-display-overlay";
+        this.canvas.parentElement?.insertBefore(this.overlay_element, this.canvas);
 
-        if(calibrate)
+        const session_options =       
         {
-            this.overlay_element = document.createElement("div");
-            this.overlay_element.id = "ar-display-overlay";
-            this.canvas.parentElement?.insertBefore(this.overlay_element, this.canvas);
-
-            session_options =       
+            requiredFeatures: ["dom-overlay"],
+            domOverlay:
             {
-                requiredFeatures: ["dom-overlay"],
-                domOverlay:
-                {
-                    root: AR_DISPLAY_WEBXR_VIEWER_FIXES ? "ar-display-overlay" : this.overlay_element //WebXR Viewer requires a string not an object
-                }
-            };
-        }
+                root: AR_DISPLAY_WEBXR_VIEWER_FIXES ? "ar-display-overlay" : this.overlay_element //WebXR Viewer requires a string not an object
+            }
+        };
 
         this.session = await navigator.xr.requestSession("immersive-ar", session_options).catch((error : any) =>
         {
@@ -524,6 +519,13 @@ class ARDisplay
     {
         this.on_render = null;
         this.on_close = null;
+
+        if(AR_DISPLAY_WEBXR_VIEWER_FIXES)
+        {
+            //For some reason the WebXR Viewer changes the background color of the website. 
+            //Or the backround color is not restored correctly.
+            document.body.style.background = "white";
+        }
 
         if(this.overlay_element != null)
         {

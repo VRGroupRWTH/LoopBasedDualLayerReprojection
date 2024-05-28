@@ -302,22 +302,22 @@ export class Session
         let resolution_height = this.config.resolution;
         let layer_count = this.config.layer_count;
         let view_count = LAYER_VIEW_COUNT;
+        let export_enabled = false;
 
-        if(this.config.mode == SessionMode.ReplayGroundTruth)
+        if(this.config.mode == SessionMode.ReplayMethod)
+        {
+            export_enabled = true;
+        }
+
+        else if(this.config.mode == SessionMode.ReplayGroundTruth)
         {
             const display_resolution = this.display.get_resolution();
 
             projection_matrix = this.display.get_projection_matrix() as Matrix;
             resolution_width = display_resolution[0];
-            resolution_width = display_resolution[1];
+            resolution_height = display_resolution[1];
             layer_count = 1;
             view_count = 1;
-        }
-
-        let export_enabled = false;
-
-        if(this.config.mode == SessionMode.ReplayMethod || this.config.mode == SessionMode.ReplayGroundTruth)
-        {
             export_enabled = true;
         }
 
@@ -388,13 +388,17 @@ export class Session
             return;   
         }
 
-        let request_id = this.request_counter;
-        let request_position = vec3.create();
-        let export_file_names = ["", "", "", ""] as FileNameArray;
+        let request : RenderRequestForm = 
+        {
+            request_id: this.request_counter,
+            export_file_names: ["", "", "", ""],
+            view_matrices: Layer.compute_view_matrices(vec3.fromValues(0.0, 0.0, 0.0)) as MatrixArray
+        };
 
         if(this.config.mode == SessionMode.Capture)
         {
-            request_position = this.display.get_position();
+            const request_position = this.display.get_position();
+            request.view_matrices = Layer.compute_view_matrices(request_position) as MatrixArray;
 
             this.request_counter++;
         }
@@ -407,7 +411,13 @@ export class Session
             }
 
             const transform = this.animation_input.get_transform();
-            mat4.getTranslation(request_position, transform.dst_transform);
+            const inverse_transform = mat4.create();
+            mat4.invert(inverse_transform, transform.dst_transform);
+
+            const request_position = vec3.create();
+            mat4.getTranslation(request_position, inverse_transform);
+
+            request.view_matrices = Layer.compute_view_matrices(request_position) as MatrixArray;
 
             this.request_counter++;
         }
@@ -423,27 +433,24 @@ export class Session
 
             if(this.config.mode == SessionMode.ReplayMethod)
             {
-                mat4.getTranslation(request_position, transform.src_transform);   
+                const inverse_transform = mat4.create();
+                mat4.invert(inverse_transform, transform.src_transform);
 
-                export_file_names[this.wrapper.ExportType.EXPORT_TYPE_DEPTH.value] = this.config.output_path + "depth/depth_" + this.request_counter + ".pfm";
-                export_file_names[this.wrapper.ExportType.EXPORT_TYPE_MESH.value] = this.config.output_path + "mesh/mesh_" + this.request_counter + ".obj";
-                export_file_names[this.wrapper.ExportType.EXPORT_TYPE_FEATURE_LINES.value] = this.config.output_path + "feature_lines/feature_lines_" + this.request_counter + ".obj";
+                const request_position = vec3.create();
+                mat4.getTranslation(request_position, inverse_transform);
+
+                request.view_matrices = Layer.compute_view_matrices(request_position) as MatrixArray;
+                request.export_file_names[this.wrapper.ExportType.EXPORT_TYPE_DEPTH.value] = this.config.output_path + "depth/depth_" + this.request_counter + ".pfm";
+                request.export_file_names[this.wrapper.ExportType.EXPORT_TYPE_MESH.value] = this.config.output_path + "mesh/mesh_" + this.request_counter + ".obj";
+                request.export_file_names[this.wrapper.ExportType.EXPORT_TYPE_FEATURE_LINES.value] = this.config.output_path + "feature_lines/feature_lines_" + this.request_counter + ".obj";
             }
 
             else if(this.config.mode == SessionMode.ReplayGroundTruth)
             {
-                mat4.getTranslation(request_position, transform.dst_transform);
-
-                export_file_names[this.wrapper.ExportType.EXPORT_TYPE_COLOR.value] = this.config.output_path + "color_ground_truth/color_ground_truth_" + this.request_counter + ".ppm";
+                request.view_matrices[0] = transform.dst_transform as Matrix;
+                request.export_file_names[this.wrapper.ExportType.EXPORT_TYPE_COLOR.value] = this.config.output_path + "color_ground_truth/color_ground_truth_" + this.request_counter + ".ppm";
             }
         }
-
-        let request : RenderRequestForm = 
-        {
-            request_id,
-            export_file_names,
-            view_matrices: Layer.compute_view_matrices(request_position) as MatrixArray
-        };
 
         if(!this.connection.send_render_request(request))
         {
