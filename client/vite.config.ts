@@ -2,10 +2,11 @@ import { defineConfig } from 'vite';
 import solidPlugin from 'vite-plugin-solid';
 import basicSsl from '@vitejs/plugin-basic-ssl'
 import path from "path";
+import fs from "fs";
 
-const server_ip = "192.168.178.22";
+const server_ip = "localhost";
 const server_port = 9000;
-const client_port = 3000;
+const client_port = 443;
 
 export default defineConfig(
 {
@@ -51,6 +52,11 @@ export default defineConfig(
         watch:
         {
             usePolling: true
+        },
+        https:
+        {
+            //key: fs.readFileSync("/home/jens/certs/hellfish.test.key"),
+            //cert: fs.readFileSync("/home/jens/certs/hellfish.test.crt")
         }
     }
 });
