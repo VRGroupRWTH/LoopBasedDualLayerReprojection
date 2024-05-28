@@ -14,7 +14,7 @@ export default defineConfig(
     plugins:
     [
         solidPlugin(),
-        basicSsl()
+        //basicSsl() //Self-Signed Certificat
     ],
     define: 
     {
@@ -55,8 +55,8 @@ export default defineConfig(
         },
         https:
         {
-            //key: fs.readFileSync("/home/jens/certs/hellfish.test.key"),
-            //cert: fs.readFileSync("/home/jens/certs/hellfish.test.crt")
+            key: fs.readFileSync("/mnt/c/Users/tb397677/Desktop/Documents/certificates/private_key.pem"),
+            cert: fs.readFileSync("/mnt/c/Users/tb397677/Desktop/Documents/certificates/certificat.pem")
         }
     }
 });
