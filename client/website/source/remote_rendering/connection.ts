@@ -149,15 +149,15 @@ export class Connection
 
     destroy() : void
     {
+        this.on_open = null;
+        this.on_layer_response = null;
+        this.on_close = null;
+
         if(this.socket != null)
         {
             this.socket.close();
             this.socket = null;
         }
-
-        this.on_open = null;
-        this.on_layer_response = null;
-        this.on_close = null;
     }
 
     send_session_create(form : SessionCreateForm) : boolean

@@ -68,14 +68,14 @@ export class GeometryDecoder
 
     destory()
     {
+        this.on_decoded = null;
+        this.on_error = null;
+
         if(this.worker != null)
         {
             this.worker.terminate();   
             this.worker = null;
         }
-
-        this.on_decoded = null;
-        this.on_error = null;
     }
 
     create_frame() : GeometryFrame | null

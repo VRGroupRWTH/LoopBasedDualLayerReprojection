@@ -1,4 +1,4 @@
-import { Component, createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { Component, createEffect, createSignal, onCleanup } from "solid-js";
 import { Session, SessionConfig } from "./session";
 import { WrapperModule } from "./wrapper";
 import { DisplayType } from "./display";

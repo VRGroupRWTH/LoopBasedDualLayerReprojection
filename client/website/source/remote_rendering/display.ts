@@ -1,5 +1,5 @@
 import { mat4, vec2, vec3 } from "gl-matrix";
-import { log_debug, log_error, log_info } from "./log";
+import { log_error, log_info } from "./log";
 
 export enum DisplayType
 {
@@ -105,6 +105,9 @@ class DesktopDisplay
 
     destroy()
     {
+        this.on_render = null;
+        this.on_close = null;
+
         if(this.close_button_element != null)
         {
             this.close_button_element.remove();
@@ -126,9 +129,6 @@ class DesktopDisplay
         {
             clearInterval(this.view_interval);   
         }
-
-        this.on_render = null;
-        this.on_close = null;
     }
 
     show() : Promise<void>
@@ -381,7 +381,8 @@ class DesktopDisplay
 
 const AR_DISPLAY_NEAR_DISTANCE = 0.1;
 const AR_DISPLAY_FAR_DISTANCE = 200.0;
-const AR_DISPLAY_FLOOR_OFFSET = 1.5;   //Distance of the device to the floor in meters when calibrating the origin
+const AR_DISPLAY_FLOOR_OFFSET = 1.5;        //Distance of the device to the floor in meters when calibrating the origin
+const AR_DISPLAY_WEBXR_VIEWER_FIXES = true;
 
 class ARDisplay
 {
@@ -436,8 +437,7 @@ class ARDisplay
                 requiredFeatures: ["dom-overlay"],
                 domOverlay:
                 {
-                    //root: this.overlay_element
-                    root: "ar-display-overlay" //WebXR Viewer requires a string not an object
+                    root: AR_DISPLAY_WEBXR_VIEWER_FIXES ? "ar-display-overlay" : this.overlay_element //WebXR Viewer requires a string not an object
                 }
             };
         }
@@ -522,6 +522,9 @@ class ARDisplay
 
     async destroy()
     {
+        this.on_render = null;
+        this.on_close = null;
+
         if(this.overlay_element != null)
         {
             this.overlay_element.remove();
@@ -545,9 +548,6 @@ class ARDisplay
             this.reference_space = null;
             this.session = null;
         }
-
-        this.on_render = null;
-        this.on_close = null;
     }
 
     show() : Promise<void>

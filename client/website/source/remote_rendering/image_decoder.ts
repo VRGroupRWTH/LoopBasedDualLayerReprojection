@@ -64,6 +64,9 @@ export class ImageDecoder
 
     destroy()
     {
+        this.on_decoded = null;
+        this.on_error = null;
+
         if(this.video_decoder != null)
         {
             if(this.video_decoder.state != "closed")
@@ -73,9 +76,6 @@ export class ImageDecoder
 
             this.video_decoder = null;   
         }
-
-        this.on_decoded = null;
-        this.on_error = null;
     }
 
     create_frame() : ImageFrame | null

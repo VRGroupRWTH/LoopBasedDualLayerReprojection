@@ -122,7 +122,14 @@ export class Session
             return false;
         }
 
-        if(!await this.create_display(preferred_display, true))
+        let calibrate = false;
+
+        if(this.config.mode == SessionMode.Capture) //Only calibrate in the capture mode
+        {
+            calibrate = true;
+        }
+
+        if(!await this.create_display(preferred_display, calibrate))
         {
             return false;   
         }
@@ -146,6 +153,8 @@ export class Session
 
     destroy()
     {
+        this.on_close = null;
+
         if(this.request_interval != null)
         {
             clearInterval(this.request_interval);

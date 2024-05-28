@@ -110,7 +110,7 @@ export class Renderer
 
             //Clear the depth buffer between the layer and render the layers from far to near on top of each other. 
             //Prevents intersection of two layers
-            this.gl.clear(this.gl.DEPTH_BUFFER_BIT); 
+            this.gl.clear(this.gl.DEPTH_BUFFER_BIT);
         }
 
         this.layer_shader.use_default();
