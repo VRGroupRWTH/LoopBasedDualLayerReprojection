@@ -354,8 +354,17 @@ void Server::process_get_scenes(HttpResponse* response, HttpRequest* request)
         if (Scene::is_file_supported(extension))
         {
             std::filesystem::path relative_path = std::filesystem::relative(entry.path().string(), this->scene_directory);
+            std::string relative_path_string = "/" + relative_path.string();
+            
+            for (char& character : relative_path_string)
+            {
+                if (character == '\\')
+                {
+                    character = '/';
+                }
+            }
 
-            scene_list.push_back(boost::json::string(relative_path.string()));
+            scene_list.push_back(boost::json::string(relative_path_string));
         }
     }
 

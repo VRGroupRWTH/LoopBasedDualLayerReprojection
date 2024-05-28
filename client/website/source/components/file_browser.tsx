@@ -18,7 +18,7 @@ const FileBrowser : Component<FileBrowserProps> = (props) =>
     const [file_selected, set_file_selected] = createSignal<number>();
     const files = createAsync(async () =>
     {
-        const files = await receive_directory_files(directory());
+        let files = await receive_directory_files(directory());
 
         files.sort((file1, file2) =>
         {
@@ -63,24 +63,81 @@ const FileBrowser : Component<FileBrowserProps> = (props) =>
         const current_files = files();
         const current_index = file_selected();
 
-        if(current_index == undefined || current_files == undefined)
-        {
-            return;   
-        }
+        const action = select_action();
 
-        const file = current_files[current_index];
-
-        if(file.type == "directory")
+        if(action == "Open")
         {
+            if(current_index == undefined || current_files == undefined)
+            {
+                return;   
+            }
+
+            const file = current_files[current_index];
+
             set_directory(directory() + file.name + "/");
             set_file_selected(undefined);
         }
 
-        else if(file.type == "file")
+        else if(action == "Select")
         {
-            props.set_select(directory() + file.name);
-            props.set_show(false);
+            let file_name = directory();
+
+            if(current_index != undefined && current_files != undefined)
+            {
+                const file = current_files[current_index];
+
+                file_name += file.name;
+            }
+
+            props.set_select(file_name);
+            props.set_show(false);   
         }
+    }
+
+    function select_action()
+    {
+        const current_files = files();
+        const current_index = file_selected();
+
+        if(props.select_type == "directory")
+        {
+            if(current_index == undefined || current_files == undefined)
+            {
+                return "Select";
+            }
+
+            const file = current_files[current_index];
+
+            switch(file.type)
+            {
+            case "directory":
+                return "Open";
+            default:
+                break;
+            }
+        }
+
+        else if(props.select_type == "file")
+        {
+            if(current_index == undefined || current_files == undefined)
+            {
+                return null;
+            }
+
+            const file = current_files[current_index];
+
+            switch(file.type)
+            {
+            case "directory":
+                return "Open";
+            case "file":
+                return "Select";
+            default:
+                break;
+            }
+        }
+
+        return null;
     }
 
     function is_selected(file_index : number) : boolean
@@ -124,7 +181,12 @@ const FileBrowser : Component<FileBrowserProps> = (props) =>
                     <Form.Control class="flex-fill" type="text" value={directory()} disabled></Form.Control>
                 </div>
                 <div class="my-3">
-                    <Suspense fallback={<div>Loading...</div>}>
+                    <Suspense fallback=
+                        {
+                            <div class="border rounded d-flex align-items-center justify-content-center overflow-y-scroll" style="height: 300px">
+                                <h5 style="font-size: 1.25rem">Loading...</h5>
+                            </div>
+                        }>
                         <Switch>
                             <Match when={!is_empty()}>
                                 <div class="border rounded overflow-hidden">
@@ -132,7 +194,7 @@ const FileBrowser : Component<FileBrowserProps> = (props) =>
                                         <ListGroup variant="flush">
                                             <Index each={files()}>
                                                 {(file, index) => 
-                                                    <ListGroupItem class="d-flex align-items-center" action active={is_selected(index)} onClick={event => set_file_selected(index)}>
+                                                    <ListGroupItem class="d-flex align-items-center" action active={is_selected(index)} onClick={event => set_file_selected(index)} ondblclick={event => on_select()}>
                                                         <Switch>
                                                             <Match when={file().type == "file"}><img src="../assets/icons/file.svg"></img></Match>
                                                             <Match when={file().type == "directory"}><img src="../assets/icons/directory.svg"></img></Match>
@@ -149,14 +211,14 @@ const FileBrowser : Component<FileBrowserProps> = (props) =>
                             </Match>
                             <Match when={is_empty()}>
                                 <div class="border rounded d-flex align-items-center justify-content-center overflow-y-scroll" style="height: 300px">
-                                    <h5 style="font-size: 1.25rem">Directory Empty!</h5>
+                                    <h5 style="font-size: 1.25rem">Directory Empty</h5>
                                 </div>
                             </Match>
                         </Switch>
                     </Suspense>
                 </div>
                 <div class="d-flex justify-content-end">
-                    <Button class="btn btn-primary" disabled={file_selected() == undefined} onClick={event => on_select()}>Select</Button>
+                    <Button class="btn btn-primary" disabled={select_action() == null} onClick={event => on_select()}>{select_action() ?? "Select"}</Button>
                 </div>
             </ModalBody>
         </Modal>

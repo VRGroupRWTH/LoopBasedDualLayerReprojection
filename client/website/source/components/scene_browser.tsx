@@ -46,7 +46,7 @@ const SceneBrowser : Component<SceneBrowserProps> = (props) =>
                     continue;
                 }
 
-                const name = file.substring(file.lastIndexOf("\\") + 1);
+                const name = file.substring(file.lastIndexOf("/") + 1);
 
                 const file_filtered = 
                 {
@@ -118,7 +118,12 @@ const SceneBrowser : Component<SceneBrowserProps> = (props) =>
             <ModalBody>
                 <input class="form-control search-input" placeholder="Search" onInput={event => on_search(event.target)}></input>
                 <div class="my-3">
-                    <Suspense fallback={<div>Loading...</div>}>
+                    <Suspense fallback=
+                        {
+                            <div class="border rounded d-flex align-items-center justify-content-center overflow-y-scroll" style="height: 300px">
+                                <h5 style="font-size: 1.25rem">Loading...</h5>
+                            </div>
+                        }>
                         <Switch>
                             <Match when={!is_empty()}>
                                 <div class="border rounded overflow-hidden">
@@ -126,7 +131,7 @@ const SceneBrowser : Component<SceneBrowserProps> = (props) =>
                                         <ListGroup variant="flush">
                                             <Index each={scenes_filtered()}>
                                                 {(scene_file, index) => 
-                                                    <ListGroupItem action active={is_selected(scene_file().index)} onClick={event => set_scene_selected(index)}>
+                                                    <ListGroupItem action active={is_selected(scene_file().index)} onClick={event => set_scene_selected(index)} ondblclick={event => on_select()}>
                                                         {scene_file().name}
                                                     </ListGroupItem>
                                                 }
@@ -137,7 +142,7 @@ const SceneBrowser : Component<SceneBrowserProps> = (props) =>
                             </Match>
                             <Match when={is_empty()}>
                                 <div class="border rounded d-flex align-items-center justify-content-center overflow-y-scroll" style="height: 300px">
-                                    <h5 style="font-size: 1.25rem">No Scenes found!</h5>
+                                    <h5 style="font-size: 1.25rem">No Scenes found</h5>
                                 </div>
                             </Match>
                         </Switch>

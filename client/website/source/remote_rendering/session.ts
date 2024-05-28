@@ -25,8 +25,7 @@ export interface SessionConfig
     output_path: string,
     animation_file_name : string,
 
-    resolution_width: number,
-    resolution_height: number,
+    resolution: number,
     layer_count: number,
     render_request_rate: number,
 
@@ -290,8 +289,8 @@ export class Session
         }
 
         let projection_matrix = Layer.compute_projection_matrix() as Matrix;
-        let resolution_width = this.config.resolution_width;
-        let resolution_height = this.config.resolution_height;
+        let resolution_width = this.config.resolution;
+        let resolution_height = this.config.resolution;
         let layer_count = this.config.layer_count;
         let view_count = LAYER_VIEW_COUNT;
 
@@ -759,8 +758,8 @@ export class Session
         }
 
         const view_image_size = vec2.create();
-        view_image_size[0] = this.config.resolution_width;
-        view_image_size[1] = this.config.resolution_height;
+        view_image_size[0] = this.config.resolution;
+        view_image_size[1] = this.config.resolution;
 
         this.renderer.render(this.display, this.frame_active, projection_matrix, view_matrix, view_image_size);
 
