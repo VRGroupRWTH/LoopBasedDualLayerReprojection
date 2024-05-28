@@ -24,6 +24,7 @@ target_link_options(wrapper PRIVATE -sENVIRONMENT=web,worker)
 target_link_options(wrapper PRIVATE -sMODULARIZE=1)
 target_link_options(wrapper PRIVATE -sEXPORT_NAME=wrapper)
 target_link_options(wrapper PRIVATE -sEXPORT_ES6=1)
+target_link_options(wrapper PRIVATE -sALLOW_MEMORY_GROWTH=1)
 target_link_options(wrapper PRIVATE --no-entry)
 
 add_custom_command(

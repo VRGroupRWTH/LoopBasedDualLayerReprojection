@@ -1,5 +1,5 @@
 import { mat4, vec2, vec3 } from "gl-matrix";
-import { log_info } from "./log";
+import { log_debug, log_error, log_info } from "./log";
 
 export enum DisplayType
 {
@@ -84,8 +84,8 @@ class DesktopDisplay
         this.canvas.onkeydown = this.on_key_down.bind(this);
         this.canvas.onkeyup = this.on_key_up.bind(this);
 
-        this.resolution[0] = this.canvas.offsetWidth;
-        this.resolution[1] = this.canvas.offsetHeight;
+        this.resolution[0] = this.canvas.clientWidth;
+        this.resolution[1] = this.canvas.clientHeight;
         this.canvas.width = this.resolution[0];
         this.canvas.height = this.resolution[1];
 
@@ -195,7 +195,7 @@ class DesktopDisplay
 
     private compute_projection_matrix()
     {
-        const aspect_ratio = this.canvas.offsetWidth / this.canvas.offsetHeight;   
+        const aspect_ratio = this.canvas.clientWidth / this.canvas.clientHeight;   
         mat4.perspective(this.projection_matrix, (DESKTOP_DISPLAY_FIELD_OF_VIEW / 180.0) * Math.PI, aspect_ratio, DESKTOP_DISPLAY_FAR_DISTANCE, DESKTOP_DISPLAY_NEAR_DISTANCE); //Switch far and near distance due to mat4.perspective() implementation
 
         //mat4.perspective() creates an left-handed projection matrix that needs to be converted to right-handed
@@ -389,6 +389,7 @@ class ARDisplay
     private gl : WebGL2RenderingContext;
     private session : XRSystem | null = null;
     private reference_space : XRReferenceSpace | null = null;
+    private base_layer : XRWebGLLayer | null = null;
     private frame_request : number | null = null;
 
     private overlay_element : HTMLDivElement | null = null;
@@ -435,7 +436,8 @@ class ARDisplay
                 requiredFeatures: ["dom-overlay"],
                 domOverlay:
                 {
-                    root: this.overlay_element
+                    //root: this.overlay_element
+                    root: "ar-display-overlay" //WebXR Viewer requires a string not an object
                 }
             };
         }
@@ -447,7 +449,7 @@ class ARDisplay
 
         if(this.session == null)
         {
-            log_info("[ARDisplay] WebXR does not support AR mode!");
+            log_error("[ARDisplay] WebXR does not support AR mode!");
 
             return false;   
         }
@@ -459,7 +461,7 @@ class ARDisplay
 
         if(this.reference_space == null)
         {
-            log_info("[ARDisplay] Can't create reference space local!");
+            log_error("[ARDisplay] Can't create reference space local!");
 
             return false;
         }
@@ -471,20 +473,42 @@ class ARDisplay
 
         if(context_response != undefined)
         {
-            log_info("[ARDisplay] Can't make rendering context XR compatible!");
+            log_error("[ARDisplay] Can't make rendering context XR compatible!");
+
+            return false;
+        }
+
+        //WebXR Viewer does not take into account the framebuffer scaling factor. 
+        //Manually set the framebuffer size by changing the with and height of the canvas
+        this.canvas.width = this.canvas.clientWidth;
+        this.canvas.height = this.canvas.clientHeight;
+
+        const base_layer_scaling = XRWebGLLayer.getNativeFramebufferScaleFactor(this.session);
+
+        this.base_layer = new XRWebGLLayer(this.session, this.gl,
+        {
+            framebufferScaleFactor: base_layer_scaling //Render with native render resolution
+        });
+
+        if(this.base_layer == null)
+        {
+            log_error("[ARDisplay] Can't create base layer!");
 
             return false;
         }
 
         const render_state =
         {
-            baseLayer: new XRWebGLLayer(this.session, this.gl),
+            baseLayer: this.base_layer,
             depthNear: AR_DISPLAY_NEAR_DISTANCE,
             depthFar: AR_DISPLAY_FAR_DISTANCE,
         };
 
         this.session.updateRenderState(render_state);
         this.session.addEventListener("end", this.on_close_internal.bind(this));
+
+        this.resolution[0] = this.base_layer.framebufferWidth;
+        this.resolution[1] = this.base_layer.framebufferHeight;
 
         this.setup_close_button();
 
@@ -496,8 +520,17 @@ class ARDisplay
         return true;
     }
 
-    destroy()
+    async destroy()
     {
+        if(this.overlay_element != null)
+        {
+            this.overlay_element.remove();
+            this.overlay_element = null;
+
+            this.close_button_element = null;
+            this.calibration_element = null;
+        }
+
         if (this.session != null)
         {
             if(this.frame_request != null)
@@ -506,18 +539,11 @@ class ARDisplay
                 this.frame_request = null;
             }
 
-            this.session.end();
+            await this.session.end();
 
+            this.base_layer = null;
             this.reference_space = null;
             this.session = null;
-        }
-
-        if(this.overlay_element != null)
-        {
-            this.overlay_element.remove();
-            this.overlay_element = null;
-            this.close_button_element = null;
-            this.calibration_element = null;
         }
 
         this.on_render = null;
@@ -534,17 +560,13 @@ class ARDisplay
         const setup_complete = new Promise<void>(resolve =>
         {
             const render_function = (time: number, frame: XRFrame) =>
-            {
-                const base_layer = this.session.renderState.baseLayer;
-                this.resolution[0] = base_layer.framebufferWidth;
-                this.resolution[1] = base_layer.framebufferHeight;
-    
+            {    
                 this.compute_projection_matrix(frame);
                 this.compute_view_matrix(frame);
     
                 if(this.on_render != null)
                 {
-                    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, base_layer.framebuffer);
+                    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, this.base_layer.framebuffer);
                     this.on_render();
                     this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
     
@@ -677,9 +699,9 @@ class ARDisplay
         this.close_button_element = document.createElement("div");
         this.close_button_element.className = "rounded-circle";
         this.close_button_element.style.position = "absolute";
+        this.close_button_element.style.zIndex = "300";
         this.close_button_element.style.top = "32px";
         this.close_button_element.style.right = "32px";
-        this.close_button_element.style.zIndex = "200";
         this.close_button_element.style.background = "rgba(255, 255, 255, 0.5)";
         this.close_button_element.style.display = "flex";
         this.close_button_element.style.alignItems = "center";
@@ -703,8 +725,12 @@ class ARDisplay
         }
 
         this.calibration_element = document.createElement("div");
-        this.calibration_element.style.width = "100%";
-        this.calibration_element.style.height = "100%";
+        this.calibration_element.style.position = "absolute";
+        this.calibration_element.style.zIndex = "200";
+        this.calibration_element.style.left = "0px";
+        this.calibration_element.style.right = "0px";
+        this.calibration_element.style.top = "0px";
+        this.calibration_element.style.bottom = "0px";
         this.calibration_element.style.background = "black";
         this.calibration_element.style.display = "flex";
         this.calibration_element.style.flexDirection = "column";
@@ -738,8 +764,12 @@ class ARDisplay
         }
 
         this.calibration_element = document.createElement("div");
-        this.calibration_element.style.width = "100%";
-        this.calibration_element.style.height = "100%";
+        this.calibration_element.style.position = "absolute";
+        this.calibration_element.style.zIndex = "200";
+        this.calibration_element.style.left = "0px";
+        this.calibration_element.style.right = "0px";
+        this.calibration_element.style.top = "0px";
+        this.calibration_element.style.bottom = "0px";
         this.calibration_element.style.background = "black";
         this.calibration_element.style.display = "flex";
         this.calibration_element.style.flexDirection = "column";

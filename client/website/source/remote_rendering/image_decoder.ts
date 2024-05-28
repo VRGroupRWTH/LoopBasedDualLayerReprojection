@@ -66,7 +66,11 @@ export class ImageDecoder
     {
         if(this.video_decoder != null)
         {
-            this.video_decoder.close();
+            if(this.video_decoder.state != "closed")
+            {
+                this.video_decoder.close();                
+            }
+
             this.video_decoder = null;   
         }
 

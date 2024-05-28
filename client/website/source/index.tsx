@@ -6,6 +6,7 @@ import { Route, Router } from "@solidjs/router";
 import { glMatrix } from "gl-matrix";
 import RemoteRendering, { WrapperModule, SessionConfig, DisplayType, SessionMode, load_wrapper_module, MeshGeneratorType, VideoCodecMode } from "./remote_rendering";
 import { SettingDropdown, SettingFile, SettingNumber, SettingNumberType, SettingScene } from "./components/setting";
+import { create_local_store } from "./components/local_storage";
 
 import "../assets/styles.scss";
 
@@ -46,11 +47,30 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
         video_use_chroma_subsampling: "Enabled",
         evaluation_mode: "Capture",
         evaluation_animation_file: "",
-        evaluation_output_directory: "",
+        evaluation_output_directory: "/",
     };
 
+    const default_config_clone = JSON.parse(JSON.stringify(default_config));
+
     const [show_settings, set_show_settings] = createSignal(true);
-    const [config, set_config] = createStore(default_config);
+    const [config, set_config] = create_local_store("loop_based_dual_layer_reprojection", default_config_clone);
+    
+    let session_reset : (() => void) | null = null;
+
+    function session_start()
+    {
+        if(session_reset != null)
+        {
+            session_reset();   
+        }
+
+        set_show_settings(false);
+    }
+
+    function register_session_reset(reset : () => void)
+    {
+        session_reset = reset;
+    }
 
     function convert_boolean(value : string) : boolean
     {
@@ -187,6 +207,11 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
         return session_config;
     }
 
+    function on_session_config_reset()
+    {
+        set_config(default_config);
+    }
+
     return (
         <Router>
             <Route path="/" component=
@@ -196,94 +221,103 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
                         <div class="d-flex justify-content-center" style="margin-top: 64px; margin-bottom: 96px;">
                             <h1 class="display-4">Loop-Based Dual-Layer Reprojection</h1>
                         </div>
-                        <div>
-                            <h4 class="border-bottom my-4">Scene Settings</h4>
-                            <SettingScene label="Scene File" value={config.scene_file_name} set_value={value => set_config("scene_file_name", value)}></SettingScene>
-                            <SettingNumber label="Scene Scale" value={config.scene_scale} set_value={value => set_config("scene_scale", value)} min_value={0.01} max_value={1.0} type={SettingNumberType.Float} step={0.01}></SettingNumber>
-                            <SettingNumber label="Scene Exposure" value={config.scene_exposure} set_value={value => set_config("scene_exposure", value)} min_value={0.0} max_value={2.0} type={SettingNumberType.Float} step={0.1}></SettingNumber>
-                            <SettingNumber label="Scene Indirect Intensity" value={config.scene_indirect_intensity} set_value={value => set_config("scene_indirect_intensity", value)} min_value={0.0} max_value={2.0} type={SettingNumberType.Float} step={0.1}></SettingNumber>
-                            <SettingFile label="Sky File" select_type="file" value={config.sky_file_name} set_value={value => set_config("sky_file_name", value)}></SettingFile>
-                            <SettingNumber label="Sky Intensity" value={config.sky_intensity} set_value={value => set_config("sky_intensity", value)} min_value={0.0} max_value={2.0} type={SettingNumberType.Float} step={0.1}></SettingNumber>
-                        </div>
-                        <div>
-                            <h4 class="border-bottom my-4">Server Settings</h4>
-                            <SettingNumber label="Render Resolution" value={config.render_resolution} set_value={value => set_config("render_resolution", value)} min_value={256} max_value={1024} step={256}></SettingNumber>
-                            <SettingNumber label="Request Rate" value={config.render_rate} set_value={value => set_config("render_rate", value)} min_value={100} max_value={2000}></SettingNumber>
-                        </div>
-                        <div>
-                            <h4 class="border-bottom my-4">Layer Settings</h4>
-                            <SettingNumber label="Depth Base Threshold" value={config.layer_depth_base_threshold} set_value={value => set_config("layer_depth_base_threshold", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
-                            <SettingNumber label="Depth Slope Threshold" value={config.layer_depth_slope_threshold} set_value={value => set_config("layer_depth_slope_threshold", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
-                            <SettingDropdown label="Use Object IDs" value={config.layer_use_object_ids} set_value={value => set_config("layer_use_object_ids", value)}>
-                                <option>Enabled</option>
-                                <option>Disabled</option>
-                            </SettingDropdown>
-                        </div>
-                        <div>
-                            <h4 class="border-bottom my-4">Mesh Settings</h4>
-                            <SettingDropdown label="Method" value={config.mesh_generator} set_value={value => set_config("mesh_generator", value)}>
-                                <option>Line-Based</option>
-                                <option>Loop-Based</option>
-                            </SettingDropdown>
-                            <SettingNumber label="Depth Max" value={config.mesh_depth_max} set_value={value => set_config("mesh_depth_max", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
-                            <Show when={config.mesh_generator == "Line-Based"}>
-                                <SettingNumber label="Laplace Threshold" value={config.line_laplace_threshold} set_value={value => set_config("line_laplace_threshold", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
-                                <SettingNumber label="Normal Scale" value={config.line_normal_scale} set_value={value => set_config("line_normal_scale", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
-                                <SettingNumber label="Line Length Min" value={config.line_line_length_min} set_value={value => set_config("line_line_length_min", value)} min_value={0} max_value={100}></SettingNumber>
-                            </Show>
-                            <Show when={config.mesh_generator == "Loop-Based"}>
-                                <SettingNumber label="Depth Base Threshold" value={config.loop_depth_base_threshold} set_value={value => set_config("loop_depth_base_threshold", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
-                                <SettingNumber label="Depth Slope Threshold" value={config.loop_depth_slope_threshold} set_value={value => set_config("loop_depth_slope_threshold", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
-                                <SettingNumber label="Normal Threshold" value={config.loop_normal_threshold} set_value={value => set_config("loop_normal_threshold", value)} min_value={0.0} max_value={10.0} type={SettingNumberType.Float} step={0.01}></SettingNumber>
-                                <SettingDropdown label="Layer Config" value={config.loop_layer_config} set_value={value => set_config("loop_layer_config", value)}>
-                                    <option>Single-Layer</option>
-                                    <option>Dual-Layer</option>
-                                </SettingDropdown>
-                                <SettingDropdown label="Use Normals" value={config.loop_use_normals} set_value={value => set_config("loop_use_normals", value)}>
-                                    <option>Enabled</option>
-                                    <option>Disabled</option>
-                                </SettingDropdown>
-                                <SettingDropdown label="Use Object IDs" value={config.loop_use_object_ids} set_value={value => set_config("loop_use_object_ids", value)}>
-                                    <option>Enabled</option>
-                                    <option>Disabled</option>
-                                </SettingDropdown>
-                            </Show>
-                        </div>
-                        <div>
-                            <h4 class="border-bottom my-4">Video Settings</h4>
-                            <SettingDropdown label="Mode" value={config.video_mode} set_value={value => set_config("video_mode", value)}>
-                                <option>Constant Quality</option>
-                                <option>Constant Bitrate</option>
-                            </SettingDropdown>
-                            <SettingNumber label="Framerate" value={config.video_framerate} set_value={value => set_config("video_framerate", value)} min_value={1} max_value={120}></SettingNumber>
-                            <SettingNumber label="Bitrate" value={config.video_bitrate} set_value={value => set_config("video_bitrate", value)} min_value={1.0} max_value={200.0} step={1.0}></SettingNumber>
-                            <SettingNumber label="Quality" value={config.video_quality} set_value={value => set_config("video_quality", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.01}></SettingNumber>
-                            <SettingDropdown label="Chroma Subsampling" value={config.video_use_chroma_subsampling} set_value={value => set_config("video_use_chroma_subsampling", value)}>
-                                    <option>Enabled</option>
-                                    <option>Disabled</option>
-                            </SettingDropdown>
-                        </div>
-                        <div>
-                            <h4 class="border-bottom my-4">Evaluation</h4>
-                            <SettingDropdown label="Mode" value={config.evaluation_mode} set_value={value => set_config("evaluation_mode", value)}>
-                                <option>Capture</option>
-                                <option>Benchmark</option>
-                                <option>Replay Method</option>
-                                <option>Replay Groundtruth</option>
-                            </SettingDropdown>
-                            <Show when={config.evaluation_mode != "Capture"}>
-                                <SettingFile label="Animation File" select_type="file" value={config.evaluation_animation_file} set_value={value => set_config("evaluation_animation_file", value)}></SettingFile>
-                            </Show>
-                            <SettingFile label="Output Directory" select_type="directory" value={config.evaluation_output_directory} set_value={value => set_config("evaluation_output_directory", value)}></SettingFile>
-                        </div>
-                        <div class="d-flex justify-content-end my-5 mx-3">
-                            <div class="bg-light rounded p-3">
-                                <Button onClick={() => set_show_settings(false)}>Confirm</Button>
+                        <form onsubmit={() => session_start()}>
+                            <div>
+                                <h4 class="border-bottom my-4">Scene Settings</h4>
+                                <SettingScene label="Scene File" value={config.scene_file_name} set_value={value => set_config("scene_file_name", value)}></SettingScene>
+                                <SettingNumber label="Scene Scale" value={config.scene_scale} set_value={value => set_config("scene_scale", value)} min_value={0.01} max_value={1.0} type={SettingNumberType.Float} step={0.01}></SettingNumber>
+                                <SettingNumber label="Scene Exposure" value={config.scene_exposure} set_value={value => set_config("scene_exposure", value)} min_value={0.0} max_value={2.0} type={SettingNumberType.Float} step={0.1}></SettingNumber>
+                                <SettingNumber label="Scene Indirect Intensity" value={config.scene_indirect_intensity} set_value={value => set_config("scene_indirect_intensity", value)} min_value={0.0} max_value={2.0} type={SettingNumberType.Float} step={0.1}></SettingNumber>
+                                <SettingFile label="Sky File" select_type="file" value={config.sky_file_name} set_value={value => set_config("sky_file_name", value)}></SettingFile>
+                                <SettingNumber label="Sky Intensity" value={config.sky_intensity} set_value={value => set_config("sky_intensity", value)} min_value={0.0} max_value={2.0} type={SettingNumberType.Float} step={0.1}></SettingNumber>
                             </div>
-                        </div>
+                            <div>
+                                <h4 class="border-bottom my-4">Server Settings</h4>
+                                <SettingNumber label="Render Resolution" value={config.render_resolution} set_value={value => set_config("render_resolution", value)} min_value={256} max_value={1024} step={256}></SettingNumber>
+                                <SettingNumber label="Request Rate" value={config.render_rate} set_value={value => set_config("render_rate", value)} min_value={100} max_value={2000}></SettingNumber>
+                            </div>
+                            <div>
+                                <h4 class="border-bottom my-4">Layer Settings</h4>
+                                <SettingNumber label="Depth Base Threshold" value={config.layer_depth_base_threshold} set_value={value => set_config("layer_depth_base_threshold", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
+                                <SettingNumber label="Depth Slope Threshold" value={config.layer_depth_slope_threshold} set_value={value => set_config("layer_depth_slope_threshold", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
+                                <SettingDropdown label="Use Object IDs" value={config.layer_use_object_ids} set_value={value => set_config("layer_use_object_ids", value)}>
+                                    <option>Enabled</option>
+                                    <option>Disabled</option>
+                                </SettingDropdown>
+                            </div>
+                            <div>
+                                <h4 class="border-bottom my-4">Mesh Settings</h4>
+                                <SettingDropdown label="Method" value={config.mesh_generator} set_value={value => set_config("mesh_generator", value)}>
+                                    <option>Line-Based</option>
+                                    <option>Loop-Based</option>
+                                </SettingDropdown>
+                                <SettingNumber label="Depth Max" value={config.mesh_depth_max} set_value={value => set_config("mesh_depth_max", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
+                                <Show when={config.mesh_generator == "Line-Based"}>
+                                    <SettingNumber label="Laplace Threshold" value={config.line_laplace_threshold} set_value={value => set_config("line_laplace_threshold", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
+                                    <SettingNumber label="Normal Scale" value={config.line_normal_scale} set_value={value => set_config("line_normal_scale", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
+                                    <SettingNumber label="Line Length Min" value={config.line_line_length_min} set_value={value => set_config("line_line_length_min", value)} min_value={0} max_value={100}></SettingNumber>
+                                </Show>
+                                <Show when={config.mesh_generator == "Loop-Based"}>
+                                    <SettingNumber label="Depth Base Threshold" value={config.loop_depth_base_threshold} set_value={value => set_config("loop_depth_base_threshold", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
+                                    <SettingNumber label="Depth Slope Threshold" value={config.loop_depth_slope_threshold} set_value={value => set_config("loop_depth_slope_threshold", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
+                                    <SettingNumber label="Normal Threshold" value={config.loop_normal_threshold} set_value={value => set_config("loop_normal_threshold", value)} min_value={0.0} max_value={10.0} type={SettingNumberType.Float} step={0.0001}></SettingNumber>
+                                    <SettingDropdown label="Layer Config" value={config.loop_layer_config} set_value={value => set_config("loop_layer_config", value)}>
+                                        <option>Single-Layer</option>
+                                        <option>Dual-Layer</option>
+                                    </SettingDropdown>
+                                    <SettingDropdown label="Use Normals" value={config.loop_use_normals} set_value={value => set_config("loop_use_normals", value)}>
+                                        <option>Enabled</option>
+                                        <option>Disabled</option>
+                                    </SettingDropdown>
+                                    <SettingDropdown label="Use Object IDs" value={config.loop_use_object_ids} set_value={value => set_config("loop_use_object_ids", value)}>
+                                        <option>Enabled</option>
+                                        <option>Disabled</option>
+                                    </SettingDropdown>
+                                </Show>
+                            </div>
+                            <div>
+                                <h4 class="border-bottom my-4">Video Settings</h4>
+                                <SettingDropdown label="Mode" value={config.video_mode} set_value={value => set_config("video_mode", value)}>
+                                    <option>Constant Bitrate</option>
+                                    <option>Constant Quality</option>
+                                </SettingDropdown>
+                                <SettingNumber label="Framerate" value={config.video_framerate} set_value={value => set_config("video_framerate", value)} min_value={1} max_value={120}></SettingNumber>
+                                <Show when={config.video_mode == "Constant Bitrate"}>
+                                    <SettingNumber label="Bitrate" value={config.video_bitrate} set_value={value => set_config("video_bitrate", value)} min_value={1.0} max_value={200.0} step={1.0}></SettingNumber>
+                                </Show>
+                                <Show when={config.video_mode == "Constant Quality"}>
+                                    <SettingNumber label="Quality" value={config.video_quality} set_value={value => set_config("video_quality", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.01}></SettingNumber>
+                                </Show>
+                                <SettingDropdown label="Chroma Subsampling" value={config.video_use_chroma_subsampling} set_value={value => set_config("video_use_chroma_subsampling", value)}>
+                                        <option>Enabled</option>
+                                        <option>Disabled</option>
+                                </SettingDropdown>
+                            </div>
+                            <div>
+                                <h4 class="border-bottom my-4">Evaluation</h4>
+                                <SettingDropdown label="Mode" value={config.evaluation_mode} set_value={value => set_config("evaluation_mode", value)}>
+                                    <option>Capture</option>
+                                    <option>Benchmark</option>
+                                    <option>Replay Method</option>
+                                    <option>Replay Groundtruth</option>
+                                </SettingDropdown>
+                                <Show when={config.evaluation_mode != "Capture"}>
+                                    <SettingFile label="Animation File" select_type="file" value={config.evaluation_animation_file} set_value={value => set_config("evaluation_animation_file", value)}></SettingFile>
+                                </Show>
+                                <SettingFile label="Output Directory" select_type="directory" value={config.evaluation_output_directory} set_value={value => set_config("evaluation_output_directory", value)}></SettingFile>
+                            </div>
+                            <div class="d-flex justify-content-between py-5 mx-3">
+                                <div class="bg-light rounded p-3">
+                                    <Button onClick={on_session_config_reset}>Reset</Button>
+                                </div>
+                                <div class="bg-light rounded p-3">
+                                    <Button type="submit">Confirm</Button>
+                                </div>
+                            </div>
+                        </form>
                     </Show>
                     <Show when={!show_settings()}>
-                        <RemoteRendering wrapper={props.wrapper} config={get_session_config()} on_close={() => set_show_settings(true)} preferred_display={DisplayType.AR}></RemoteRendering>
+                        <RemoteRendering wrapper={props.wrapper} config={get_session_config()} register_reset={register_session_reset} on_close={() => set_show_settings(true)} preferred_display={DisplayType.AR}></RemoteRendering>
                     </Show>
                 </div>
             }/>

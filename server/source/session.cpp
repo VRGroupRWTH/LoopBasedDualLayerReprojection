@@ -514,12 +514,16 @@ void Session::destroy_frame(Frame* frame)
 {
     for (uint32_t view = 0; view < this->view_count; view++)
     {
-        glDeleteFramebuffers(1, &frame->frame_buffers[view]);
-        glDeleteBuffers(1, &frame->color_export_buffers[view]);
-        glDeleteBuffers(1, &frame->depth_export_buffers[view]);
+        if (this->export_enabled)
+        {
+            glDeleteBuffers(1, &frame->color_export_buffers[view]);
+            glDeleteBuffers(1, &frame->depth_export_buffers[view]);
 
-        frame->color_export_pointers[view] = nullptr;
-        frame->depth_export_pointers[view] = nullptr;
+            frame->color_export_pointers[view] = nullptr;
+            frame->depth_export_pointers[view] = nullptr;
+        }
+
+        glDeleteFramebuffers(1, &frame->frame_buffers[view]);
         frame->layer_timer[view].destroy();
 
         this->mesh_generator->destroy_frame(frame->mesh_generator_frame[view]);

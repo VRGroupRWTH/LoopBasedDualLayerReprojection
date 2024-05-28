@@ -67,25 +67,35 @@ export const SettingNumber : Component<SettingNumberProps> = (props) =>
     const type = props.type ?? SettingNumberType.Int;
     const step = props.step ?? 1;
 
+    function convert_float(value : number) : string
+    {
+        let string = value.toFixed(5);
+
+        if(!string.includes("."))
+        {
+            return string;
+        }
+
+        while(string.endsWith("0"))
+        {
+            if(string[string.length - 2] == ".")
+            {
+                break;
+            }   
+
+            string = string.slice(0, -1);
+        }
+
+        return string;
+    }
+
     function get_value() : string
     {
         if(type == SettingNumberType.Float)
         {
-            let value_string = props.value.toFixed(5);
-
-            while(value_string.endsWith("0"))
-            {
-                if(value_string[value_string.length - 2] == ".")
-                {
-                    break;
-                }   
-
-                value_string = value_string.slice(0, -1);
-            }
-
-            return value_string;
+            return convert_float(props.value);
         }
-
+        
         return Math.round(props.value).toString();
     }
 
@@ -93,7 +103,7 @@ export const SettingNumber : Component<SettingNumberProps> = (props) =>
     {
         if(type == SettingNumberType.Float)
         {
-            return props.min_value.toFixed(1);
+            return convert_float(props.min_value);
         }
 
         return props.min_value.toString();
@@ -103,7 +113,7 @@ export const SettingNumber : Component<SettingNumberProps> = (props) =>
     {
         if(type == SettingNumberType.Float)
         {
-            return props.max_value.toFixed(1);
+            return convert_float(props.max_value);
         }
 
         return props.max_value.toString();
@@ -169,7 +179,7 @@ export const SettingNumber : Component<SettingNumberProps> = (props) =>
                 </div>
             </div>
             <div class="col-2">
-                <Form.Control ref={set_input} type="number" value={get_value()} min={props.min_value} max={props.max_value} step={props.step} onChange={event => on_change(event.target.value)} onKeyPress={event => on_change(input()?.value)}></Form.Control>
+                <Form.Control ref={set_input} type="number" value={get_value()} min={props.min_value} max={props.max_value} step={props.step} onChange={event => on_change(event.target.value)} onFocusOut={event => on_change(input()?.value)}></Form.Control>
             </div>
         </div>
     );  
@@ -206,7 +216,7 @@ export const SettingScene : Component<SettingSceneProps> = (props) =>
             </div>
             <div class="col-9">
                 <InputGroup>
-                    <Form.Control type="text" value={props.value} onChange={event => props.set_value(event.target.value)}></Form.Control>
+                    <Form.Control type="text" value={props.value} onChange={event => props.set_value(event.target.value)} required></Form.Control>
                     <Button onClick={event => set_show_browser(true)}>Browse</Button>
                 </InputGroup>
             </div>

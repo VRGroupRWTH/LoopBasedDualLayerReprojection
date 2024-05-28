@@ -1,16 +1,15 @@
-import { Component, createEffect, createSignal, onCleanup } from "solid-js";
+import { Component, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { Session, SessionConfig } from "./session";
 import { WrapperModule } from "./wrapper";
 import { DisplayType } from "./display";
-
-export type OnRemoteRenderingClose = () => void;
 
 export interface RemoteRenderingProps
 {
     wrapper : WrapperModule,
     config : SessionConfig,
     preferred_display : DisplayType,
-    on_close : OnRemoteRenderingClose
+    register_reset : (reset : () => void) => void;
+    on_close : () => void
 }
 
 const RemoteRendering : Component<RemoteRenderingProps> = (props) =>
@@ -18,17 +17,7 @@ const RemoteRendering : Component<RemoteRenderingProps> = (props) =>
     let [canvas, set_canvas] = createSignal<HTMLCanvasElement>();
     let [session, set_session] = createSignal<Session>();
 
-    function on_session_close()
-    {
-        session()?.destroy();
-
-        set_canvas(undefined);
-        set_session(undefined);
-
-        props.on_close();
-    }
-
-    createEffect(async () => 
+    async function on_open()
     {
         const canvas_element = canvas();
 
@@ -38,7 +27,7 @@ const RemoteRendering : Component<RemoteRenderingProps> = (props) =>
         }
 
         let session = new Session(props.config, props.wrapper, canvas_element);
-        session.set_on_close(on_session_close);
+        session.set_on_close(on_close);
 
         if(!await session.create(props.preferred_display))
         {
@@ -46,12 +35,35 @@ const RemoteRendering : Component<RemoteRenderingProps> = (props) =>
         }
 
         set_session(session);
+    }
+
+    function on_close()
+    {
+        session()?.destroy();
+
+        set_canvas(undefined);
+        set_session(undefined);
+
+        props.on_close();
+    }
+
+    function on_reset()
+    {
+        on_close();
+        on_open();
+    }
+
+    createEffect(async () => 
+    {
+        on_open();
     });
-    
+
     onCleanup(() =>
     {
-        on_session_close();
+        on_close();
     });
+
+    props.register_reset(on_reset);
 
     return (
         <canvas ref={set_canvas} tabIndex={1000} style="outline: none; position: absolute; width: 100%; height: 100%; left: 0px; top: 0px; z-index: 100"/>        
