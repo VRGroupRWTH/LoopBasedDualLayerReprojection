@@ -3,12 +3,12 @@ import { receive_file, send_file } from "./connection";
 
 export class AnimationTransform
 {
-    src_transform : mat4;
-    dst_transform : mat4;
+    src_position : vec3;   //World space position
+    dst_transform : mat4;  //View matrix
 
-    constructor(src_transform : mat4, dst_transform : mat4)
+    constructor(src_position : vec3, dst_transform : mat4)
     {
-        this.src_transform = src_transform;
+        this.src_position = src_position;
         this.dst_transform = dst_transform;
     }
 }
@@ -23,8 +23,14 @@ interface AnimationKeyFrame
 
 export class Animation
 {
+    private projection_matrix = mat4.create();
     private key_frames : AnimationKeyFrame[] = [];
     private time_origin = 0.0;
+
+    constructor()
+    {
+        mat4.identity(this.projection_matrix);
+    }
 
     async load(animation_path : string) : Promise<boolean>
     {
@@ -38,7 +44,15 @@ export class Animation
         const text_decoder = new TextDecoder;
         const file_string = text_decoder.decode(file);
 
-        this.key_frames = JSON.parse(file_string);
+        const animation = JSON.parse(file_string);
+
+        if(!("projection_matrix" in animation) || !("key_frames" in animation))
+        {
+            return false;   
+        }
+
+        this.projection_matrix = animation.projection_matrix;
+        this.key_frames = animation.key_frames;
 
         if(!Array.isArray(this.key_frames))
         {
@@ -58,10 +72,16 @@ export class Animation
 
     async store(animation_path : string) : Promise<boolean>
     {
-        const key_frame_string = JSON.stringify(this.key_frames);
+        const animation = 
+        {
+            projection_matrix: this.projection_matrix,
+            key_frames: this.key_frames,
+        };
+
+        const animation_string = JSON.stringify(animation);
         
         const text_encoder = new TextEncoder();
-        const file_buffer = text_encoder.encode(key_frame_string);
+        const file_buffer = text_encoder.encode(animation_string);
 
         await send_file(animation_path, file_buffer);
 
@@ -73,12 +93,14 @@ export class Animation
         this.time_origin = time_origin;
     }
 
+    set_projection_matrix(projection_matrix : mat4)
+    {
+        this.projection_matrix = projection_matrix;
+    }
+
     add_transform(transform : AnimationTransform)
     {
         const time = performance.now() - this.time_origin;
-
-        const src_position = vec3.create();
-        mat4.getTranslation(src_position, transform.src_transform);
 
         const dst_position = vec3.create();
         mat4.getTranslation(dst_position, transform.dst_transform);
@@ -89,7 +111,7 @@ export class Animation
         const key_frame : AnimationKeyFrame =
         {
             time,
-            src_position,
+            src_position: transform.src_position,
             dst_position,
             dst_orientation
         }
@@ -101,12 +123,12 @@ export class Animation
     {
         if(this.key_frames.length == 0)
         {
-            const src_transform = mat4.create();
+            const src_position = vec3.create();
             const dst_transform = mat4.create();
-            mat4.identity(src_transform);
+            vec3.zero(src_position);
             mat4.identity(dst_transform);
 
-            return new AnimationTransform(src_transform, dst_transform);
+            return new AnimationTransform(src_position, dst_transform);
         }
 
         const time = performance.now() - this.time_origin;
@@ -136,13 +158,10 @@ export class Animation
         const dst_orientation = quat.create();
         quat.slerp(dst_orientation, key_frame1.dst_orientation, key_frame2.dst_orientation, weight);
 
-        const src_transform = mat4.create();
-        mat4.fromTranslation(src_transform, src_position);
-
         const dst_transform = mat4.create();
         mat4.fromRotationTranslation(dst_transform, dst_orientation, dst_position);
 
-        return new AnimationTransform(src_transform, dst_transform);
+        return new AnimationTransform(src_position, dst_transform);
     }
 
     get_transform_at(index : number) : AnimationTransform | null
@@ -153,14 +172,11 @@ export class Animation
         }
 
         const key_frame = this.key_frames[index];
-        
-        const src_transform = mat4.create();
-        mat4.fromTranslation(src_transform, key_frame.src_position);
 
         const dst_transform = mat4.create();
         mat4.fromRotationTranslation(dst_transform, key_frame.dst_orientation, key_frame.dst_position);
 
-        return new AnimationTransform(src_transform, dst_transform);
+        return new AnimationTransform(key_frame.src_position, dst_transform);
     }
 
     get_frame_count() : number
@@ -171,6 +187,11 @@ export class Animation
     get_time_origin() : number
     {
         return this.time_origin;
+    }
+
+    get_projection_matrix() : mat4
+    {
+        return this.projection_matrix;
     }
 
     has_finished() : boolean

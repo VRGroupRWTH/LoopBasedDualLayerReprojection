@@ -48,6 +48,10 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
         evaluation_mode: "Capture",
         evaluation_animation_file: "",
         evaluation_output_directory: "/",
+        evaluation_export_color: "Disabled",
+        evaluation_export_depth: "Disabled",
+        evaluation_export_mesh: "Disabled",
+        evaluation_export_feature_lines: "Disabled"
     };
 
     const default_config_clone = JSON.parse(JSON.stringify(default_config));
@@ -201,7 +205,11 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
             scene_exposure: config.scene_exposure,
             scene_indirect_intensity: config.scene_indirect_intensity,
             sky_file_name: config.sky_file_name,
-            sky_intensity: config.sky_intensity
+            sky_intensity: config.sky_intensity,
+            export_color: convert_boolean(config.evaluation_export_color),
+            export_depth: convert_boolean(config.evaluation_export_depth),
+            export_mesh: convert_boolean(config.evaluation_export_mesh),
+            export_feature_lines: convert_boolean(config.evaluation_export_feature_lines)
         };
 
         return session_config;
@@ -303,6 +311,24 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
                                 </SettingDropdown>
                                 <Show when={config.evaluation_mode != "Capture"}>
                                     <SettingFile label="Animation File" select_type="file" value={config.evaluation_animation_file} set_value={value => set_config("evaluation_animation_file", value)}></SettingFile>
+                                </Show>
+                                <Show when={config.evaluation_mode == "Replay Method"}>
+                                    <SettingDropdown label="Export Color" value={config.evaluation_export_color} set_value={value => set_config("evaluation_export_color", value)}>
+                                            <option>Enabled</option>
+                                            <option>Disabled</option>
+                                    </SettingDropdown>
+                                    <SettingDropdown label="Export Depth" value={config.evaluation_export_depth} set_value={value => set_config("evaluation_export_depth", value)}>
+                                            <option>Enabled</option>
+                                            <option>Disabled</option>
+                                    </SettingDropdown>
+                                    <SettingDropdown label="Export Mesh" value={config.evaluation_export_mesh} set_value={value => set_config("evaluation_export_mesh", value)}>
+                                            <option>Enabled</option>
+                                            <option>Disabled</option>
+                                    </SettingDropdown>
+                                    <SettingDropdown label="Export Feature Lines" value={config.evaluation_export_feature_lines} set_value={value => set_config("evaluation_export_feature_lines", value)}>
+                                            <option>Enabled</option>
+                                            <option>Disabled</option>
+                                    </SettingDropdown>
                                 </Show>
                                 <SettingFile label="Output Directory" select_type="directory" value={config.evaluation_output_directory} set_value={value => set_config("evaluation_output_directory", value)}></SettingFile>
                             </div>

@@ -5,7 +5,7 @@ import { Frame, Layer, LAYER_VIEW_COUNT } from "./frame";
 import { GeometryDecoder, GeometryFrame } from "./geometry_decoder";
 import { ImageDecoder, ImageFrame } from "./image_decoder";
 import { Renderer } from "./renderer";
-import { FileNameArray, LayerResponseForm, Matrix, MatrixArray, MeshGeneratorType, MeshSettingsForm, RenderRequestForm, SessionCreateForm, VideoCodecType, VideoSettingsForm, WrapperModule } from "./wrapper";
+import { LayerResponseForm, Matrix, MatrixArray, MeshGeneratorType, MeshSettingsForm, RenderRequestForm, SessionCreateForm, VideoCodecType, VideoSettingsForm, WrapperModule } from "./wrapper";
 import { log_error, log_info } from "./log";
 import { mat4, vec2, vec3 } from "gl-matrix";
 
@@ -42,6 +42,11 @@ export interface SessionConfig
 
     sky_file_name: string,
     sky_intensity: number
+
+    export_color: boolean,
+    export_depth: boolean,
+    export_mesh: boolean,
+    export_feature_lines: boolean
 }
 
 export type OnSessionClose = () => void;
@@ -297,6 +302,21 @@ export class Session
             return;
         }
 
+        //Set the time origin directly after the connection has been established
+        const time_origin = performance.now();
+        this.animation_input.set_time_origin(time_origin);
+        this.animation_output.set_time_origin(time_origin);
+
+        if(this.config.mode == SessionMode.Capture)
+        {
+            this.animation_output.set_projection_matrix(this.display.get_projection_matrix());
+        }
+
+        else if(this.config.mode == SessionMode.Benchmark)
+        {
+            this.animation_output.set_projection_matrix(this.animation_input.get_projection_matrix());
+        }
+
         let projection_matrix = Layer.compute_projection_matrix() as Matrix;
         let resolution_width = this.config.resolution;
         let resolution_height = this.config.resolution;
@@ -313,7 +333,7 @@ export class Session
         {
             const display_resolution = this.display.get_resolution();
 
-            projection_matrix = this.display.get_projection_matrix() as Matrix;
+            projection_matrix = this.animation_input.get_projection_matrix() as Matrix;
             resolution_width = display_resolution[0];
             resolution_height = display_resolution[1];
             layer_count = 1;
@@ -371,10 +391,6 @@ export class Session
             this.request_interval = setInterval(this.on_request.bind(this), this.config.render_request_rate);
         }
 
-        const time_origin = performance.now();
-        this.animation_input.set_time_origin(time_origin);
-        this.animation_output.set_time_origin(time_origin);
-
         const text_encoder = new TextEncoder();
         const session_settings = text_encoder.encode(JSON.stringify(session_create));
 
@@ -412,7 +428,7 @@ export class Session
 
             const transform = this.animation_input.get_transform();
             const inverse_transform = mat4.create();
-            mat4.invert(inverse_transform, transform.dst_transform);
+            mat4.invert(inverse_transform, transform.dst_transform); //dst_transfrom is a view matrix. Need to invert to get world space position of camera
 
             const request_position = vec3.create();
             mat4.getTranslation(request_position, inverse_transform);
@@ -433,16 +449,27 @@ export class Session
 
             if(this.config.mode == SessionMode.ReplayMethod)
             {
-                const inverse_transform = mat4.create();
-                mat4.invert(inverse_transform, transform.src_transform);
+                request.view_matrices = Layer.compute_view_matrices(transform.src_position) as MatrixArray;
 
-                const request_position = vec3.create();
-                mat4.getTranslation(request_position, inverse_transform);
+                if(this.config.export_color)
+                {
+                    request.export_file_names[this.wrapper.ExportType.EXPORT_TYPE_COLOR.value] = this.config.output_path + "color/color_" + this.request_counter + ".ppm";
+                }
 
-                request.view_matrices = Layer.compute_view_matrices(request_position) as MatrixArray;
-                request.export_file_names[this.wrapper.ExportType.EXPORT_TYPE_DEPTH.value] = this.config.output_path + "depth/depth_" + this.request_counter + ".pfm";
-                request.export_file_names[this.wrapper.ExportType.EXPORT_TYPE_MESH.value] = this.config.output_path + "mesh/mesh_" + this.request_counter + ".obj";
-                request.export_file_names[this.wrapper.ExportType.EXPORT_TYPE_FEATURE_LINES.value] = this.config.output_path + "feature_lines/feature_lines_" + this.request_counter + ".obj";
+                if(this.config.export_depth)
+                {
+                    request.export_file_names[this.wrapper.ExportType.EXPORT_TYPE_DEPTH.value] = this.config.output_path + "depth/depth_" + this.request_counter + ".pfm";
+                }
+
+                if(this.config.export_mesh)
+                {
+                    request.export_file_names[this.wrapper.ExportType.EXPORT_TYPE_MESH.value] = this.config.output_path + "mesh/mesh_" + this.request_counter + ".obj";
+                }
+
+                if(this.config.export_feature_lines)
+                {
+                    request.export_file_names[this.wrapper.ExportType.EXPORT_TYPE_FEATURE_LINES.value] = this.config.output_path + "feature_lines/feature_lines_" + this.request_counter + ".obj";
+                }
             }
 
             else if(this.config.mode == SessionMode.ReplayGroundTruth)
@@ -696,10 +723,10 @@ export class Session
                 return;   
             }
 
-            const src_transform = mat4.create();
-            mat4.identity(src_transform);
+            const src_position = vec3.create();
+            vec3.zero(src_position);
 
-            this.animation_output.add_transform(new AnimationTransform(src_transform, view_matrix));
+            this.animation_output.add_transform(new AnimationTransform(src_position, view_matrix));
         }
 
         else if(this.config.mode == SessionMode.Benchmark)
@@ -718,16 +745,17 @@ export class Session
                 return this.on_shutdown();
             }
 
-            const src_position = vec3.create();
-            mat4.getTranslation(src_position, from.view_matrices[0]);
+            const inverse_view_matrix = mat4.create();
+            mat4.invert(inverse_view_matrix, from.view_matrices[0]); //Need to invert to get world space position of camera
 
-            const src_transform = from.view_matrices[0];
-            mat4.fromTranslation(src_transform, src_position);
+            const src_position = vec3.create();
+            mat4.getTranslation(src_position, inverse_view_matrix);
 
             const animation_transform = this.animation_input.get_transform();
             view_matrix = animation_transform.dst_transform;
+            projection_matrix = this.animation_input.get_projection_matrix();
 
-            this.animation_output.add_transform(new AnimationTransform(src_transform, view_matrix));
+            this.animation_output.add_transform(new AnimationTransform(src_position, view_matrix));
         }
 
         else
@@ -771,6 +799,7 @@ export class Session
             }
 
             view_matrix = animation_transform.dst_transform;
+            projection_matrix = this.animation_input.get_projection_matrix();
         }
 
         const view_image_size = vec2.create();
