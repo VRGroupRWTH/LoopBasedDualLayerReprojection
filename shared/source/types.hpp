@@ -57,18 +57,18 @@ namespace shared
 
     struct LineSettings
     {
-        float laplace_threshold = 0.005f;
-        float normal_scale = SHARED_PI * 0.25f;
+        float laplace_threshold = 0.003f;
+        float normal_scale = 0.5f;
         uint32_t line_length_min = 10;
     };
 
     struct LoopSettings
     {
-        float depth_base_threshold = 0.005f;
-        float depth_slope_threshold = 0.005f;
-        float normal_threshold = SHARED_PI * 0.25f;
-        float triangle_scale = 0.0f;
-        uint32_t loop_length_min = 100;
+        float depth_base_threshold = 0.001f;
+        float depth_slope_threshold = 0.007f;
+        float normal_threshold = SHARED_PI * 0.22222222f; //40°
+        float triangle_scale = 2.0f;
+        uint32_t loop_length_min = 80;
         std::uint8_t use_normals = true;
         std::uint8_t use_object_ids = true;
     };
