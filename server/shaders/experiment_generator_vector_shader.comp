@@ -10,6 +10,7 @@ layout(binding = 0) uniform sampler2D depth_buffer;
 layout(binding = 1) uniform sampler2D normal_buffer;
 layout(binding = 2) uniform usampler2D object_id_buffer;
 layout(binding = 0, r8ui) uniform writeonly uimage2D vector_buffer;
+layout(binding = 1, r8ui) uniform writeonly uimage2D closed_buffer;
 
 uniform float depth_max;
 uniform float depth_base_threshold;
@@ -74,6 +75,11 @@ ivec2 backward_closed[4] = ivec2[4]
     ivec2(-1,  0)
 );
 
+uint delta_depth_mask = (EXPERIMENT_GENERATOR_DELTA_DEPTH << 0) | (EXPERIMENT_GENERATOR_DELTA_DEPTH << 3) | (EXPERIMENT_GENERATOR_DELTA_DEPTH << 6) | (EXPERIMENT_GENERATOR_DELTA_DEPTH << 9);
+uint delta_normal_mask = (EXPERIMENT_GENERATOR_DELTA_NORMAL << 0) | (EXPERIMENT_GENERATOR_DELTA_NORMAL << 3) | (EXPERIMENT_GENERATOR_DELTA_NORMAL << 6) | (EXPERIMENT_GENERATOR_DELTA_NORMAL << 9);
+uint delta_object_id_mask = (EXPERIMENT_GENERATOR_DELTA_OBJECT_ID << 0) | (EXPERIMENT_GENERATOR_DELTA_OBJECT_ID << 3) | (EXPERIMENT_GENERATOR_DELTA_OBJECT_ID << 6) | (EXPERIMENT_GENERATOR_DELTA_OBJECT_ID << 9);
+uint cut_loop_mask = delta_depth_mask | delta_object_id_mask;
+
 void load_sample(ivec2 coord, inout float depth, inout vec3 normal, inout uint object_id)
 {
     ivec2 image_size = ivec2(textureSize(depth_buffer, 0).xy);
@@ -82,6 +88,7 @@ void load_sample(ivec2 coord, inout float depth, inout vec3 normal, inout uint o
     {
         depth = -1.0;
         normal = vec3(0.0, 0.0, 1.0);
+        object_id = LOOP_GENERATOR_INVALID_OBJECT_ID;
     }
 
     else
@@ -90,7 +97,7 @@ void load_sample(ivec2 coord, inout float depth, inout vec3 normal, inout uint o
 
         if(depth < depth_max)
         {
-            if(use_normals)
+            if(use_normals) // Normal still required for the depth decision
             {
                 normal = decode_normal(texelFetch(normal_buffer, coord, 0).xy);
             }
@@ -120,48 +127,60 @@ void load_sample(ivec2 coord, inout float depth, inout vec3 normal, inout uint o
     }
 }
 
-bool compare_samples(float depth1, vec3 normal1, uint object_id1, float depth2, vec3 normal2, uint object_id2)
+uint compare_samples(float depth1, vec3 normal1, uint object_id1, float depth2, vec3 normal2, uint object_id2)
 {
     float slope = 1.0 - max(normal1.z, normal2.z);
 
     float delta_depth = abs(depth1 - depth2);
     float delta_normal = acos(dot(normal1, normal2));
 
-    if(delta_depth >= depth_base_threshold + slope * depth_slope_threshold || delta_normal >= normal_threshold || object_id1 != object_id2)
+	uint delta_bitfield = 0;
+
+    if(delta_depth >= depth_base_threshold + slope * depth_slope_threshold)
     {
-        return true;
+        delta_bitfield |= EXPERIMENT_GENERATOR_DELTA_DEPTH;
     }
 
-    return false;
+    if(delta_normal >= normal_threshold)
+    {
+        delta_bitfield |= EXPERIMENT_GENERATOR_DELTA_NORMAL;
+    }
+
+	if(object_id1 != object_id2)
+	{
+		delta_bitfield |= EXPERIMENT_GENERATOR_DELTA_OBJECT_ID;
+	}
+
+    return delta_bitfield;
 }
 
 void main()
 {
     ivec2 base_coord = ivec2(gl_GlobalInvocationID);
     ivec2 src_image_size = ivec2(textureSize(depth_buffer, 0).xy);
+    ivec2 dst_image_size = ivec2(imageSize(vector_buffer).xy);
 
     if(any(greaterThan(base_coord, src_image_size)))
     {
         return;
     }
 
-    float first_depth;
-    vec3 first_normal;
-    uint first_object_id;
+    float first_depth = 0.0;
+    vec3 first_normal = vec3(0.0);
+    uint first_object_id = 0;
     
-    vec3 last_normal;
-    float last_depth;
-    uint last_object_id;
+    float last_depth = 0.0;
+    vec3 last_normal = vec3(0.0);
+    uint last_object_id = 0;
 
-    uint step_bitfield = 0;
-    uint step_mask = 0x01;
+    uint delta_bitfield = 0;
 
     for(uint index = 0; index < 4; index++)
     {
         ivec2 adjacent_coord = (base_coord - 1) + adjacent_offsets[index];
-        float adjacent_depth;
-        vec3 adjacent_normal;
-        uint adjacent_object_id;
+        float adjacent_depth = 0.0;
+        vec3 adjacent_normal = vec3(0.0);
+        uint adjacent_object_id = 0;
 
         load_sample(adjacent_coord, adjacent_depth, adjacent_normal, adjacent_object_id);
 
@@ -174,12 +193,8 @@ void main()
 
         else
         {
-            if(compare_samples(last_depth, last_normal, last_object_id, adjacent_depth, adjacent_normal, adjacent_object_id))
-            {
-                step_bitfield |= step_mask;
-            }
-
-            step_mask <<= 1;
+			delta_bitfield |= compare_samples(last_depth, last_normal, last_object_id, adjacent_depth, adjacent_normal, adjacent_object_id);
+			delta_bitfield <<= 3;
         }
 
         last_depth = adjacent_depth;
@@ -187,17 +202,46 @@ void main()
         last_object_id = adjacent_object_id;
     }
 
-    if(compare_samples(last_depth, last_normal, last_object_id, first_depth, first_normal, first_object_id))
-    {
-        step_bitfield |= step_mask;
-    }
-
-    if(step_bitfield == 0)
+	delta_bitfield |= compare_samples(last_depth, last_normal, last_object_id, first_depth, first_normal, first_object_id);
+	
+    if(delta_bitfield == 0)
     {
         return;
     }
 
-    ivec2 dst_image_size = ivec2(imageSize(vector_buffer).xy);
+    bool is_cut_loop = ((delta_bitfield & cut_loop_mask) != 0);
+    uint bridge_bitfield = 0;
+    uint closed_bitfield = 0;
+
+    for(uint index = 0; index < 4; index++)
+    {
+        uint side_bitfield = delta_bitfield & 0x07;
+        
+        if((side_bitfield & (EXPERIMENT_GENERATOR_DELTA_DEPTH | EXPERIMENT_GENERATOR_DELTA_OBJECT_ID)) != 0)
+        {
+            closed_bitfield |= 1;
+        }
+
+        else if((side_bitfield & EXPERIMENT_GENERATOR_DELTA_NORMAL) != 0)
+        {
+            if(is_cut_loop)
+            {
+                bridge_bitfield |= 1;
+            }
+
+            else
+            {
+                closed_bitfield |= 1;
+            }
+        }
+
+		if(index < 3)
+		{
+			delta_bitfield >>= 3;
+			closed_bitfield <<= 1;
+			bridge_bitfield <<= 1;
+		}
+    }
 
     for(uint index = 0; index < 4; index++)
     {
@@ -212,12 +256,12 @@ void main()
         direction.xy = forward_open[index];
         direction.zw = backward_open[index];
 
-        if((step_bitfield & forward_mask[index]) != 0)
+        if((closed_bitfield & forward_mask[index]) != 0)
         {
             direction.xy = forward_closed[index];
         }
 
-        if((step_bitfield & backward_mask[index]) != 0)
+        if((closed_bitfield & backward_mask[index]) != 0)
         {
             direction.zw = backward_closed[index];
         }
@@ -226,6 +270,30 @@ void main()
         encoded_direction |= encode_direction(direction.xy);
         encoded_direction |= encode_direction(direction.zw) << 2;
 
+        if(is_cut_loop)
+        {
+            encoded_direction |= EXPERIMENT_GENERATOR_VECTOR_CUT;
+        }
+
+        else
+        {
+            encoded_direction |= EXPERIMENT_GENERATOR_VECTOR_EDGE;
+        }
+
+        if((bridge_bitfield & forward_mask[index]) != 0)
+        {
+            encoded_direction |= EXPERIMENT_GENERATOR_VECTOR_BRIDGE;
+        }
+
         imageStore(vector_buffer, adjacent_coord, uvec4(encoded_direction));
     }
+
+    uint closed_buffer_value = closed_bitfield;
+
+    if(!is_cut_loop)
+    {
+        closed_buffer_value |= 0x10;
+    }
+
+    imageStore(closed_buffer, base_coord, uvec4(closed_buffer_value));
 }

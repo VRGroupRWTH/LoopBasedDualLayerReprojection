@@ -96,15 +96,15 @@ void main()
     {
         uint dst_range_index = dst_range_offset + index;
         uint segment_count = dst_loop_range_list[dst_range_index].segment_count;
+        uint segment_offset = dst_loop_range_list[dst_range_index].segment_offset;
 
-        if(segment_count == 0)
+        if(segment_count == 0 || segment_offset == EXPERIMENT_GENERATOR_INVALID_SEGMENT_OFFSET)
         {
             continue;
         }
 
         ivec2 start_coord = ivec2(dst_loop_range_list[dst_range_index].start_coord);
         ivec2 end_coord = ivec2(dst_loop_range_list[dst_range_index].end_coord);
-        uint segment_offset = dst_loop_range_list[dst_range_index].segment_offset;
         
         distribute(cell_coord, start_coord, end_coord, segment_offset);
     }

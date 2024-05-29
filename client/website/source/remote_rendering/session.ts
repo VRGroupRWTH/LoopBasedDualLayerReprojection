@@ -1,7 +1,7 @@
 import { Animation, AnimationTransform } from "./animation";
 import { Connection, send_file, send_image } from "./connection";
 import { Display, DisplayType, build_display } from "./display";
-import { Frame, Layer, LAYER_VIEW_COUNT } from "./frame";
+import { Frame, FRAME_MAX_LAYER_COUNT, Layer, LAYER_VIEW_COUNT } from "./frame";
 import { GeometryDecoder, GeometryFrame } from "./geometry_decoder";
 import { ImageDecoder, ImageFrame } from "./image_decoder";
 import { Renderer } from "./renderer";
@@ -86,6 +86,13 @@ export class Session
 
     async create(preferred_display : DisplayType) : Promise<boolean>
     {
+        if(this.config.layer_count > FRAME_MAX_LAYER_COUNT)
+        {
+            log_error("[Session] Layer count too high!");
+
+            return false;   
+        }
+
         this.gl = this.canvas.getContext("webgl2");
 
         if(this.gl == null)

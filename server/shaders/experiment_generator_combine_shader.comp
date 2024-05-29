@@ -30,9 +30,9 @@ layout(binding = 3, std430) buffer LoopBuffer
     Loop loop_list[];
 };
 
+uniform uint loop_min_length;
 uniform uint cell_size_x;
 uniform uint cell_size_y;
-
 uniform uint src_cell_buffer_size;
 uniform uint dst_cell_buffer_size;
 
@@ -52,7 +52,7 @@ uint get_dst_range_offset(ivec2 cell_coord)
     return (cell_coord.y * image_width + cell_coord.x) * dst_cell_buffer_size;
 }
 
-void trace_line(ivec2 cell_coord, ivec2 cell_min, ivec2 cell_size, inout ivec2 end_coord, inout uint segment_count)
+void trace_line(ivec2 cell_coord, ivec2 cell_min, ivec2 cell_size, inout ivec2 end_coord, inout uint segment_count, inout uint segment_length, inout uint segment_bitfield)
 {
     while(true)
     {
@@ -77,9 +77,12 @@ void trace_line(ivec2 cell_coord, ivec2 cell_min, ivec2 cell_size, inout ivec2 e
             
             if(all(equal(end_coord, start_coord)))
             {
-                src_loop_range_list[src_range_index].flag = 1;
-                
+                uint segment_flag = src_loop_range_list[src_range_index].flag;
+                src_loop_range_list[src_range_index].flag = segment_flag | EXPERIMENT_GENERATOR_LOOP_RANGE_PROCESSED;
+
+                segment_bitfield |= segment_flag;
                 segment_count += src_loop_range_list[src_range_index].segment_count;
+                segment_length += src_loop_range_list[src_range_index].segment_length;
                 end_coord = ivec2(src_loop_range_list[src_range_index].end_coord);
                 
                 found = true;
@@ -95,7 +98,7 @@ void trace_line(ivec2 cell_coord, ivec2 cell_min, ivec2 cell_size, inout ivec2 e
     }
 }
 
-bool trace_loop(ivec2 cell_coord, ivec2 cell_min, ivec2 cell_size, ivec2 quadrant_offset, uint quadrant_index, ivec2 start_coord, inout ivec2 end_coord, inout uint segment_count)
+bool trace_loop(ivec2 cell_coord, ivec2 cell_min, ivec2 cell_size, ivec2 quadrant_offset, uint quadrant_index, ivec2 start_coord, inout ivec2 end_coord, inout uint segment_count, inout uint segment_length, inout uint segment_bitfield)
 {
     while(true)
     {
@@ -131,7 +134,9 @@ bool trace_loop(ivec2 cell_coord, ivec2 cell_min, ivec2 cell_size, ivec2 quadran
                     return false; //Loop already processed
                 }
 
+                segment_bitfield |= src_loop_range_list[src_range_index].flag;
                 segment_count += src_loop_range_list[src_range_index].segment_count;
+                segment_length += src_loop_range_list[src_range_index].segment_length;
                 end_coord = ivec2(src_loop_range_list[src_range_index].end_coord);
 
                 found = true;
@@ -182,19 +187,24 @@ void main()
             continue;
         }
         
-        src_loop_range_list[src_range_index].flag = 1;
+        uint segment_flag = src_loop_range_list[src_range_index].flag;
+        src_loop_range_list[src_range_index].flag = segment_flag | EXPERIMENT_GENERATOR_LOOP_RANGE_PROCESSED;
         
         ivec2 end_coord = ivec2(src_loop_range_list[src_range_index].end_coord);
         uint segment_count = src_loop_range_list[src_range_index].segment_count;
+        uint segment_length = src_loop_range_list[src_range_index].segment_length;
+        uint segment_bitfield = segment_flag;
 
-        trace_line(cell_coord, cell_min, cell_size, end_coord, segment_count);
+        trace_line(cell_coord, cell_min, cell_size, end_coord, segment_count, segment_length, segment_bitfield);
 
         uint dst_range_index = dst_range_offset + atomicAdd(dst_range_count, 1);
         dst_loop_range_list[dst_range_index].previous_coord = u16vec2(previous_coord);
         dst_loop_range_list[dst_range_index].start_coord = src_loop_range_list[src_range_index].start_coord;
         dst_loop_range_list[dst_range_index].end_coord = u16vec2(end_coord);
-        dst_loop_range_list[dst_range_index].flag = 0;
+        dst_loop_range_list[dst_range_index].flag = segment_bitfield;
         dst_loop_range_list[dst_range_index].segment_count = segment_count;
+        dst_loop_range_list[dst_range_index].segment_offset = EXPERIMENT_GENERATOR_INVALID_SEGMENT_OFFSET;
+        dst_loop_range_list[dst_range_index].segment_length = segment_length;
     }
 
     barrier();
@@ -204,7 +214,7 @@ void main()
         uint src_range_index = src_range_offset + index;
         uint flag = src_loop_range_list[src_range_index].flag;
         
-        if(flag > 0)
+        if((flag & EXPERIMENT_GENERATOR_LOOP_RANGE_PROCESSED) != 0)
         {
             continue;
         }
@@ -212,25 +222,33 @@ void main()
         ivec2 start_coord = ivec2(src_loop_range_list[src_range_index].start_coord);
         ivec2 end_coord = ivec2(src_loop_range_list[src_range_index].end_coord);
         uint segment_count = src_loop_range_list[src_range_index].segment_count;
+        uint segment_length = src_loop_range_list[src_range_index].segment_length;
+        uint segment_bitfield = src_loop_range_list[src_range_index].flag;
         
-        if(!trace_loop(cell_coord, cell_min, cell_size, src_offset, index, start_coord, end_coord, segment_count))
+        if(!trace_loop(cell_coord, cell_min, cell_size, src_offset, index, start_coord, end_coord, segment_count, segment_length, segment_bitfield))
         {
             continue; //Loop already processed
         }
         
-        uint loop_index = atomicAdd(loop_count.loop_counter, 1);
-        uint segment_offset = atomicAdd(loop_count.segment_counter, segment_count);
+        if((segment_bitfield & EXPERIMENT_GENERATOR_LOOP_CUT) != 0 || segment_length >= loop_min_length)
+        {
+            uint loop_index = atomicAdd(loop_count.loop_counter, 1);
+            uint segment_offset = atomicAdd(loop_count.segment_counter, segment_count);
 
-        loop_list[loop_index].segment_count = segment_count;
-        loop_list[loop_index].segment_offset = segment_offset;
+            loop_list[loop_index].segment_count = segment_count;
+            loop_list[loop_index].segment_offset = segment_offset;
+            loop_list[loop_index].loop_length = segment_length;
+            loop_list[loop_index].loop_flag = segment_bitfield;
 
-        uint dst_range_index = dst_range_offset + atomicAdd(dst_range_count, 1);
-        dst_loop_range_list[dst_range_index].previous_coord = u16vec2(start_coord);
-        dst_loop_range_list[dst_range_index].start_coord = u16vec2(start_coord);
-        dst_loop_range_list[dst_range_index].end_coord = u16vec2(start_coord);
-        dst_loop_range_list[dst_range_index].flag = 1;
-        dst_loop_range_list[dst_range_index].segment_count = segment_count;
-        dst_loop_range_list[dst_range_index].segment_offset = segment_offset;
+            uint dst_range_index = dst_range_offset + atomicAdd(dst_range_count, 1);
+            dst_loop_range_list[dst_range_index].previous_coord = u16vec2(start_coord);
+            dst_loop_range_list[dst_range_index].start_coord = u16vec2(start_coord);
+            dst_loop_range_list[dst_range_index].end_coord = u16vec2(start_coord);
+            dst_loop_range_list[dst_range_index].flag = segment_bitfield | EXPERIMENT_GENERATOR_LOOP_RANGE_PROCESSED;
+            dst_loop_range_list[dst_range_index].segment_count = segment_count;
+            dst_loop_range_list[dst_range_index].segment_offset = segment_offset;
+            dst_loop_range_list[dst_range_index].segment_length = segment_length;
+        }
     }
 
     barrier();

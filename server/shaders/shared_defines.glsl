@@ -1,6 +1,20 @@
 #ifndef SHADER_SHARED_DEFINES
 #define SHADER_SHARED_DEFINES
 
+#define EXPERIMENT_GENERATOR_VECTOR_CUT    0x10
+#define EXPERIMENT_GENERATOR_VECTOR_EDGE   0x20
+#define EXPERIMENT_GENERATOR_VECTOR_BRIDGE 0x40
+
+#define EXPERIMENT_GENERATOR_DELTA_DEPTH     0x01
+#define EXPERIMENT_GENERATOR_DELTA_NORMAL    0x02
+#define EXPERIMENT_GENERATOR_DELTA_OBJECT_ID 0x04
+
+#define EXPERIMENT_GENERATOR_LOOP_CUT              0x01
+#define EXPERIMENT_GENERATOR_LOOP_EGDE             0x02
+#define EXPERIMENT_GENERATOR_LOOP_RANGE_PROCESSED  0x10
+
+#define EXPERIMENT_GENERATOR_INVALID_SEGMENT_OFFSET 0xFFFFFFFF
+
 #define LOOP_GENERATOR_BASE_CELL_SIZE 8
 #define LOOP_GENERATOR_INVALID_OBJECT_ID 0xFFFFFFFF
 
@@ -74,6 +88,8 @@ struct Loop
 {
     uint segment_count;
     uint segment_offset;
+    uint loop_length;
+    uint loop_flag;
 };
 
 struct LoopRange
@@ -85,6 +101,7 @@ struct LoopRange
 
     uint segment_count;
     uint segment_offset;
+    uint segment_length;
 };
 
 struct LoopSegment

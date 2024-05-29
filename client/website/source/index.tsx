@@ -4,7 +4,7 @@ import { render } from "solid-js/web";
 import { Button } from "solid-bootstrap";
 import { Route, Router } from "@solidjs/router";
 import { glMatrix } from "gl-matrix";
-import RemoteRendering, { WrapperModule, SessionConfig, DisplayType, SessionMode, load_wrapper_module, MeshGeneratorType, VideoCodecMode } from "./remote_rendering";
+import RemoteRendering, { WrapperModule, SessionConfig, DisplayType, SessionMode, load_wrapper_module, MeshGeneratorType, VideoCodecMode, LoopSettings, LineSettings } from "./remote_rendering";
 import { SettingDropdown, SettingFile, SettingNumber, SettingNumberType, SettingScene } from "./components/setting";
 import { create_local_store } from "./components/local_storage";
 
@@ -133,6 +133,7 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
         {
         case "Line-Based":
             mesh_generator = props.wrapper.MeshGeneratorType.MESH_GENERATOR_TYPE_LINE;
+            layer_count = 1; //The line based method only works with one layer
             break;
         case "Loop-Based":
             mesh_generator = props.wrapper.MeshGeneratorType.MESH_GENERATOR_TYPE_LOOP;
@@ -155,6 +156,33 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
             break;
         }
 
+        //Only add the parameters to the config if the method is used
+        let line_config : LineSettings | undefined = undefined;
+        let loop_config : LoopSettings | undefined = undefined;
+
+        if(mesh_generator == props.wrapper.MeshGeneratorType.MESH_GENERATOR_TYPE_LINE)
+        {
+            line_config =
+            {
+                laplace_threshold: config.line_laplace_threshold,
+                normal_scale: config.line_normal_scale,
+                line_length_min: config.line_line_length_min
+            };
+        }
+
+        else if(mesh_generator == props.wrapper.MeshGeneratorType.MESH_GENERATOR_TYPE_LOOP)
+        {
+            loop_config =
+            {
+                depth_base_threshold: config.loop_depth_base_threshold,
+                depth_slope_threshold: config.loop_depth_slope_threshold,
+                normal_threshold: config.loop_normal_threshold,
+                triangle_scale: config.loop_triangle_scale,
+                use_normals: convert_boolean(config.loop_use_normals) ? 1 : 0,
+                use_object_ids: convert_boolean(config.loop_use_object_ids) ? 1 : 0
+            };
+        }
+
         const session_config : SessionConfig =
         {
             mode: session_mode,
@@ -175,21 +203,8 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
                 mesh:
                 {
                     depth_max: config.mesh_depth_max,
-                    line: 
-                    {
-                        laplace_threshold: config.line_laplace_threshold,
-                        normal_scale: config.line_normal_scale,
-                        line_length_min: config.line_line_length_min
-                    },
-                    loop: 
-                    {
-                        depth_base_threshold: config.loop_depth_base_threshold,
-                        depth_slope_threshold: config.loop_depth_slope_threshold,
-                        normal_threshold: config.loop_normal_threshold,
-                        triangle_scale: config.loop_triangle_scale,
-                        use_normals: convert_boolean(config.loop_use_normals) ? 1 : 0,
-                        use_object_ids: convert_boolean(config.loop_use_object_ids) ? 1 : 0
-                    }
+                    line: line_config,
+                    loop: loop_config
                 }
             },
             video_settings:
@@ -262,7 +277,7 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
                                 <SettingNumber label="Depth Max" value={config.mesh_depth_max} set_value={value => set_config("mesh_depth_max", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
                                 <Show when={config.mesh_generator == "Line-Based"}>
                                     <SettingNumber label="Laplace Threshold" value={config.line_laplace_threshold} set_value={value => set_config("line_laplace_threshold", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
-                                    <SettingNumber label="Normal Scale" value={config.line_normal_scale} set_value={value => set_config("line_normal_scale", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
+                                    <SettingNumber label="Normal Scale" value={config.line_normal_scale} set_value={value => set_config("line_normal_scale", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.0001}></SettingNumber>
                                     <SettingNumber label="Line Length Min" value={config.line_line_length_min} set_value={value => set_config("line_line_length_min", value)} min_value={0} max_value={100}></SettingNumber>
                                 </Show>
                                 <Show when={config.mesh_generator == "Loop-Based"}>

@@ -1,0 +1,171 @@
+#version 430
+#extension GL_NV_gpu_shader5 : require
+
+#include "shared_defines.glsl"
+#include "shared_math_library.glsl"
+
+layout(local_size_x = LOOP_GENERATOR_VECTOR_WORK_GROUP_SIZE_X, local_size_y = LOOP_GENERATOR_VECTOR_WORK_GROUP_SIZE_Y, local_size_z = 1) in;
+
+layout(binding = 0) uniform usampler2D closed_buffer;
+layout(binding = 0, r8ui) uniform writeonly uimage2D vector_buffer;
+
+ivec2 adjacent_offsets[4] = ivec2[4]
+(
+    ivec2(-1, 0),
+    ivec2(0, -1),
+    ivec2(1, 0),
+    ivec2(0, 1)
+);
+
+ivec2 vector_offsets[4] = ivec2[4]
+(
+    ivec2(0, 0),
+    ivec2(1, 0),
+    ivec2(1, 1),
+    ivec2(0, 1)
+);
+
+uint forward_mask[4] = uint[4]
+(
+    0x08,
+    0x01,
+    0x02,
+    0x04
+);
+
+ivec2 forward_open[4] = ivec2[4]
+(
+    ivec2( 0,  1),
+    ivec2(-1,  0),
+    ivec2( 0, -1),
+    ivec2( 1,  0)
+);
+
+ivec2 forward_closed[4] = ivec2[4]
+(
+    ivec2(-1,  0),
+    ivec2( 0, -1),
+    ivec2( 1,  0),
+    ivec2( 0,  1)
+);
+
+uint backward_mask[4] = uint[4]
+(
+    0x01,
+    0x02,
+    0x04,
+    0x08
+);
+
+ivec2 backward_open[4] = ivec2[4]
+(
+    ivec2( 1,  0),
+    ivec2( 0,  1),
+    ivec2(-1,  0),
+    ivec2( 0, -1)
+);
+
+ivec2 backward_closed[4] = ivec2[4]
+(
+    ivec2( 0, -1),
+    ivec2( 1,  0),
+    ivec2( 0,  1),
+    ivec2(-1,  0)
+);
+
+uint opposite_mask[4] = uint[4]
+(
+    0x02,
+    0x04,
+    0x08,
+    0x01
+);
+
+uint bridge_mask[4] = uint[4]
+(
+    0x04,
+    0x08,
+    0x01,
+    0x02
+);
+
+void main()
+{
+    ivec2 base_coord = ivec2(gl_GlobalInvocationID);
+    ivec2 base_image_size = ivec2(textureSize(closed_buffer, 0).xy);
+    ivec2 dst_image_size = ivec2(imageSize(vector_buffer).xy);
+
+    if(any(greaterThanEqual(base_coord, base_image_size)))
+    {
+        return;
+    }
+
+    uint closed_buffer_value = texelFetch(closed_buffer, base_coord, 0).x;
+    bool is_edge_loop = (closed_buffer_value & 0x10) != 0;
+
+    if(!is_edge_loop)
+    {
+        return; // Already handeld by the vector shader
+    }
+
+    uint closed_bitfield = closed_buffer_value & 0x0F;
+    uint bridge_bitfield = 0;
+
+    for(uint index = 0; index < 4; index++)
+    {
+        ivec2 adjacent_coord = base_coord + adjacent_offsets[index];
+        uint adjacent_closed_bitfield = texelFetch(closed_buffer, adjacent_coord, 0).x;
+
+        if(adjacent_closed_bitfield == 0)
+        {
+            continue; // Noting to do here
+        }
+
+        if((closed_bitfield & forward_mask[index]) != 0 && (adjacent_closed_bitfield & opposite_mask[index]) == 0)
+        {
+            closed_bitfield &= ~forward_mask[index];
+            bridge_bitfield |= bridge_mask[index];
+        }
+    }
+
+    if(bridge_bitfield == 0)
+    {
+        return; // Nothing to change
+    }
+
+    for(uint index = 0; index < 4; index++)
+    {
+        ivec2 vector_coord = (base_coord * 2 - 1) + vector_offsets[index];
+
+        if(is_outside(vector_coord, dst_image_size))
+        {
+            continue;
+        }
+
+        ivec4 direction = ivec4(0);
+        direction.xy = forward_open[index];
+        direction.zw = backward_open[index];
+
+        if((closed_bitfield & forward_mask[index]) != 0)
+        {
+            direction.xy = forward_closed[index];
+        }
+
+        if((closed_bitfield & backward_mask[index]) != 0)
+        {
+            direction.zw = backward_closed[index];
+        }
+
+        uint encoded_direction = 0;
+        encoded_direction |= encode_direction(direction.xy);
+        encoded_direction |= encode_direction(direction.zw) << 2;
+        encoded_direction |= EXPERIMENT_GENERATOR_VECTOR_EDGE;
+
+        if((bridge_bitfield & forward_mask[index]) != 0)
+        {
+            encoded_direction |= EXPERIMENT_GENERATOR_VECTOR_BRIDGE;
+        }
+
+        imageStore(vector_buffer, vector_coord, uvec4(encoded_direction));
+    }
+}

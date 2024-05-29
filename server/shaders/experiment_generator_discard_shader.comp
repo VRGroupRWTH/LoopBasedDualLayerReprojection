@@ -1,0 +1,75 @@
+#version 430
+#extension GL_NV_gpu_shader5 : require
+
+#include "shared_defines.glsl"
+#include "shared_math_library.glsl"
+
+layout(local_size_x = LOOP_GENERATOR_WRITE_WORK_GROUP_SIZE_X, local_size_y = LOOP_GENERATOR_WRITE_WORK_GROUP_SIZE_Y, local_size_z = 1) in;
+
+layout(binding = 0, r8ui) uniform uimage2D vector_buffer;
+layout(binding = 1, r32ui) uniform readonly uimage2D loop_range_count_buffer;
+
+layout(binding = 0, std430) buffer LoopRangeBuffer
+{
+    LoopRange loop_range_list[];
+};
+
+uniform uint cell_buffer_size;
+
+uint get_range_offset(ivec2 cell_coord)
+{
+    uint image_width = imageSize(loop_range_count_buffer).x;
+
+    return (cell_coord.y * image_width + cell_coord.x) * cell_buffer_size;
+}
+
+void main()
+{
+    ivec2 cell_coord = ivec2(gl_GlobalInvocationID);
+    ivec2 image_size = imageSize(loop_range_count_buffer);
+
+    if(any(greaterThanEqual(cell_coord, image_size)))
+    {
+        return;
+    }
+
+    uint range_count = imageLoad(loop_range_count_buffer, cell_coord).x;
+    uint range_offset = get_range_offset(cell_coord);
+    
+    for(uint index = 0; index < range_count; index++)
+    {
+        uint range_index = range_offset + index;
+        uint segment_count = loop_range_list[range_index].segment_count;
+        uint segment_offset = loop_range_list[range_index].segment_offset;
+
+        if(segment_count == 0 || segment_offset != EXPERIMENT_GENERATOR_INVALID_SEGMENT_OFFSET) //Only if the loops is not long enough and was therefore discarded
+        {
+            continue;
+        }
+
+        ivec2 current_coord = ivec2(loop_range_list[range_index].start_coord);
+        ivec2 end_coord = ivec2(loop_range_list[range_index].end_coord);
+
+        while(true)
+        {
+            uint encoded_direction = imageLoad(vector_buffer, current_coord).x;
+            ivec2 direction = decode_direction(encoded_direction);
+
+            bool is_bridge = (encoded_direction & EXPERIMENT_GENERATOR_VECTOR_BRIDGE) != 0;
+
+            if(is_bridge)
+            {
+                encoded_direction &= ~EXPERIMENT_GENERATOR_VECTOR_BRIDGE; //Remove bridge flag
+
+                imageStore(vector_buffer, current_coord, uvec4(encoded_direction));
+            }
+
+            current_coord += direction;
+
+            if(all(equal(current_coord, end_coord)))
+            {
+                break;
+            }
+        }
+    }
+}

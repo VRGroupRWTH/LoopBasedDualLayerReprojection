@@ -25,6 +25,7 @@ layout(binding = 2, std430) buffer LoopBuffer
 };
 
 uniform uint cell_buffer_size;
+uniform uint loop_min_length;
 
 uint get_range_offset(ivec2 cell_coord)
 {
@@ -47,7 +48,7 @@ void set_flag(inout uint64_t flag_buffer, ivec2 local_coord)
     flag_buffer |= (uint64_t(0x01) << offset);
 }
 
-bool trace_backwards(ivec2 cell_coord, ivec2 global_coord, inout uint64_t flag_buffer, inout ivec2 previous_coord, inout ivec2 start_coord, ivec2 start_direction, inout uint segment_count)
+bool trace_backwards(ivec2 cell_coord, ivec2 global_coord, inout uint64_t flag_buffer, inout ivec2 previous_coord, inout ivec2 start_coord, ivec2 start_direction, inout uint segment_count, inout uint segment_length, inout uint vector_bitfield)
 {
     ivec2 current_direction = -start_direction;
 
@@ -57,7 +58,7 @@ bool trace_backwards(ivec2 cell_coord, ivec2 global_coord, inout uint64_t flag_b
         ivec2 direction = decode_direction(encoded_direction >> 2);
         previous_coord = start_coord + direction;
 
-        if(any(notEqual(current_direction, direction)))
+        if(any(notEqual(current_direction, direction)) || (encoded_direction & EXPERIMENT_GENERATOR_VECTOR_BRIDGE) != 0)
         {
             current_direction = direction;
 
@@ -72,6 +73,9 @@ bool trace_backwards(ivec2 cell_coord, ivec2 global_coord, inout uint64_t flag_b
         start_coord = previous_coord;
         set_flag(flag_buffer, start_coord - cell_coord);
 
+        vector_bitfield |= encoded_direction;
+        segment_length++;
+
         if(all(equal(start_coord, global_coord)))
         { 
             return true;
@@ -81,7 +85,7 @@ bool trace_backwards(ivec2 cell_coord, ivec2 global_coord, inout uint64_t flag_b
     return false;
 }
 
-void trace_forward(ivec2 cell_coord, inout uint64_t flag_buffer, inout ivec2 end_coord, ivec2 start_direction, inout uint segment_count)
+void trace_forward(ivec2 cell_coord, inout uint64_t flag_buffer, inout ivec2 end_coord, ivec2 start_direction, inout uint segment_count, inout uint segment_length, inout uint vector_bitfield)
 {
     ivec2 current_direction = start_direction;
 
@@ -98,7 +102,10 @@ void trace_forward(ivec2 cell_coord, inout uint64_t flag_buffer, inout ivec2 end
         ivec2 direction = decode_direction(encoded_direction);
         end_coord = end_coord + direction;
 
-        if(any(notEqual(current_direction, direction)))
+        vector_bitfield |= encoded_direction;
+        segment_length++;
+
+        if(any(notEqual(current_direction, direction)) || (encoded_direction & EXPERIMENT_GENERATOR_VECTOR_BRIDGE) != 0)
         {
             current_direction = direction;
 
@@ -144,40 +151,61 @@ void main()
 
             ivec2 start_forward_direction = decode_direction(encoded_direction);
             ivec2 start_backward_direction = decode_direction(encoded_direction >> 2);
-            uint range_index = range_offset + range_count;
-            range_count++;
 
             ivec2 previous_coord = global_coord;
             ivec2 start_coord = global_coord;
             uint segment_count = 0;
+            uint segment_length = 0;
+            uint vector_bitfield = 0;
 
-            if(trace_backwards(cell_coord, global_coord, flag_buffer, previous_coord, start_coord, start_forward_direction, segment_count))
+            if(trace_backwards(cell_coord, global_coord, flag_buffer, previous_coord, start_coord, start_forward_direction, segment_count, segment_length, vector_bitfield))
             {
-                uint loop_index = atomicAdd(loop_count.loop_counter, 1);
-                uint segment_offset = atomicAdd(loop_count.segment_counter, segment_count);
-                
-                loop_list[loop_index].segment_count = segment_count;
-                loop_list[loop_index].segment_offset = segment_offset;
+                uint segment_offset = EXPERIMENT_GENERATOR_INVALID_SEGMENT_OFFSET;
+
+                if((vector_bitfield & EXPERIMENT_GENERATOR_VECTOR_CUT) != 0 || segment_length >= loop_min_length)
+                {
+                    uint loop_index = atomicAdd(loop_count.loop_counter, 1);
+                    segment_offset = atomicAdd(loop_count.segment_counter, segment_count);
+                    
+                    loop_list[loop_index].segment_count = segment_count;
+                    loop_list[loop_index].segment_offset = segment_offset;
+                    loop_list[loop_index].loop_length = segment_length;
+                    loop_list[loop_index].loop_flag = vector_bitfield >> 4;
+                }
+
+                uint range_index = range_offset + range_count;
+                range_count++;
 
                 loop_range_list[range_index].previous_coord = u16vec2(global_coord + start_backward_direction);
                 loop_range_list[range_index].start_coord = u16vec2(global_coord);
                 loop_range_list[range_index].end_coord = u16vec2(global_coord);
-                loop_range_list[range_index].flag = 1;
+                loop_range_list[range_index].flag = (vector_bitfield >> 4) | EXPERIMENT_GENERATOR_LOOP_RANGE_PROCESSED;
                 loop_range_list[range_index].segment_count = segment_count;
                 loop_range_list[range_index].segment_offset = segment_offset;
+                loop_range_list[range_index].segment_length = segment_length;
             }
 
             else
             {
                 ivec2 end_coord = global_coord;
 
-                trace_forward(cell_coord, flag_buffer, end_coord, start_forward_direction, segment_count);
+                trace_forward(cell_coord, flag_buffer, end_coord, start_forward_direction, segment_count, segment_length, vector_bitfield);
+
+                if((encoded_direction & EXPERIMENT_GENERATOR_VECTOR_BRIDGE) != 0)
+                {
+                    segment_count--;
+                }
+
+                uint range_index = range_offset + range_count;
+                range_count++;
 
                 loop_range_list[range_index].previous_coord = u16vec2(previous_coord);
                 loop_range_list[range_index].start_coord = u16vec2(start_coord);
                 loop_range_list[range_index].end_coord = u16vec2(end_coord);
-                loop_range_list[range_index].flag = 0;
+                loop_range_list[range_index].flag = (vector_bitfield >> 4);
                 loop_range_list[range_index].segment_count = segment_count;
+                loop_range_list[range_index].segment_offset = EXPERIMENT_GENERATOR_INVALID_SEGMENT_OFFSET;
+                loop_range_list[range_index].segment_length = segment_length;
             }
         }
     }

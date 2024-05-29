@@ -22,14 +22,51 @@ layout(binding = 1, std430) buffer LoopSegmentBuffer
 };
 
 uniform float depth_max;
-uniform float depth_base_threshold;
 uniform uint cell_buffer_size;
+
+ivec2 forward_closed[4] = ivec2[4]
+(
+    ivec2(-1,  0),
+    ivec2( 0, -1),
+    ivec2( 1,  0),
+    ivec2( 0,  1)
+);
 
 uint get_range_offset(ivec2 cell_coord)
 {
     uint image_width = imageSize(loop_range_count_buffer).x;
 
     return (cell_coord.y * image_width + cell_coord.x) * cell_buffer_size;
+}
+
+ivec2 get_bridge_neighbour_offset(ivec2 coord, bool is_edge)
+{
+    ivec2 local_coord = (coord + 1) % 2;
+    uint local_index = 0;
+
+    if (local_coord.y > 0) // Circular indexing
+    {
+        local_index = 3 - local_coord.x;
+    }
+
+    else
+    {
+        local_index = local_coord.x;
+    }
+
+    ivec2 offset = ivec2(0);
+
+    if (is_edge)
+    {
+        offset = forward_closed[(local_index + 1) % 4];
+    }
+
+    else
+    {
+        offset = forward_closed[local_index];
+    }
+
+    return offset;
 }
 
 void main()
@@ -49,8 +86,9 @@ void main()
     {
         uint range_index = range_offset + index;
         uint segment_count = loop_range_list[range_index].segment_count;
+        uint segment_offset = loop_range_list[range_index].segment_offset;
 
-        if(segment_count == 0)
+        if(segment_count == 0 || segment_offset == EXPERIMENT_GENERATOR_INVALID_SEGMENT_OFFSET)
         {
             continue;
         }
@@ -60,51 +98,49 @@ void main()
 
         ivec2 current_coord = ivec2(loop_range_list[range_index].start_coord);
         uint current_direction = texelFetch(vector_buffer, previous_coord, 0).x;
-        uint current_segment_offset = loop_range_list[range_index].segment_offset;
 
         while(true)
         {
             uint encoded_direction = texelFetch(vector_buffer, current_coord, 0).x;
             ivec2 direction = decode_direction(encoded_direction);
 
-            if((encoded_direction & 0x03) != (current_direction & 0x03))
+            bool is_bridge = (encoded_direction & EXPERIMENT_GENERATOR_VECTOR_BRIDGE) != 0;
+
+            if((encoded_direction & 0x03) != (current_direction & 0x03) || is_bridge)
             {
                 float end_coord_depth = min(texelFetch(depth_buffer, current_coord / 2, 0).x, depth_max);
 
-                bool depth_step = false;
-
-                for(int offset_y = -1; offset_y <= 1; offset_y++)
+                if(is_bridge)
                 {
-                    for(int offset_x = -1; offset_x <= 1; offset_x++)
+                    bool is_edge = (encoded_direction & EXPERIMENT_GENERATOR_VECTOR_EDGE) != 0;
+
+                    ivec2 neighbour_coord = current_coord + get_bridge_neighbour_offset(current_coord, is_edge);
+                    uint neighbour_value = texelFetch(vector_buffer, neighbour_coord, 0).x;
+
+                    bool is_neighbour_bridge = (neighbour_value & EXPERIMENT_GENERATOR_VECTOR_BRIDGE) != 0;
+                    bool is_neighbour_edge = (neighbour_value & EXPERIMENT_GENERATOR_VECTOR_EDGE) != 0;
+
+                    if((is_neighbour_bridge && (is_edge != is_neighbour_edge)))
                     {
-                        if(offset_x == 0 && offset_y == 0)
-                        {
-                            continue;
-                        }
+                        end_coord_depth = -end_coord_depth; //Encode bridge coord using [-1.0, 0.0]
+                    }
 
-                        ivec2 neighbour_offset = ivec2(offset_x, offset_y);
-                        ivec2 neighbour_coord = (current_coord / 2) + neighbour_offset;
+                    else if((encoded_direction & 0x03) != (current_direction & 0x03))
+                    {
+                        end_coord_depth = end_coord_depth; //Encode normal coord using [0.0, 1.0]
+                    }
 
-                        float neighbour_depth = min(texelFetch(depth_buffer, neighbour_coord, 0).x, depth_max);
-
-                        if(abs(end_coord_depth - neighbour_depth) > depth_base_threshold)
-                        {
-                            depth_step = true;
-                            break;
-                        }
+                    else
+                    {
+                        end_coord_depth = -2.0; //Encode invalid coord using ]-infinity, -1.0[
                     }
                 }
 
-                if(depth_step)
-                {
-                    end_coord_depth = -end_coord_depth; //Encode depth discontinuity using negative depth values
-                }
-
-                loop_segment_list[current_segment_offset].end_coord = u16vec2(current_coord);
-                loop_segment_list[current_segment_offset].end_coord_depth = end_coord_depth;
+                loop_segment_list[segment_offset].end_coord = u16vec2(current_coord);
+                loop_segment_list[segment_offset].end_coord_depth = end_coord_depth;
 
                 current_direction = encoded_direction;
-                current_segment_offset++;
+                segment_offset++;
             }
 
             current_coord += direction;
