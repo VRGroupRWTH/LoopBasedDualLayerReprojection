@@ -64,11 +64,11 @@ float compute_laplacian(ivec2 coord, ivec2 image_size)
         for(int offset_x = -1; offset_x <= 1; offset_x++)
         {
             float depth = texelFetch(depth_buffer, coord + ivec2(offset_x, offset_y), 0).x;
-            float weight = -1.0;
+            float weight = 1.0;
 
             if(offset_x == 0 && offset_y == 0)
             {
-                weight = 8.0;
+                weight = -8.0;
             }    
 
             laplacian += weight * depth;
