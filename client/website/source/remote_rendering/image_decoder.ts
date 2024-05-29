@@ -14,8 +14,11 @@ export class ImageFrame
         this.image = image;
     }
 
-    close()
+    clear()
     {
+        this.decode_start = 0.0;
+        this.decode_end = 0.0;
+
         this.video_frame?.close()
     }
 }

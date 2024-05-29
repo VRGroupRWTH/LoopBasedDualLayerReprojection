@@ -68,6 +68,7 @@ namespace shared
         float depth_slope_threshold = 0.005f;
         float normal_threshold = SHARED_PI * 0.25f;
         float triangle_scale = 0.0f;
+        uint32_t loop_length_min = 100;
         std::uint8_t use_normals = true;
         std::uint8_t use_object_ids = true;
     };
@@ -107,29 +108,36 @@ namespace shared
         float time_quad_tree = 0.0f;
 
         // Time required for the generation of the mesh on the CPU
+        float time_cpu = 0.0f;
         float time_line_trace = 0.0f;
         float time_triangulation = 0.0f;
+        uint32_t line_count = 0;
     };
 
     struct LoopViewMetadata // All time measurements in milliseconds
     {
         // Time required for the generation of the mesh on the GPU
         float time_vector = 0.0f;
+        float time_split = 0.0f;
         float time_base = 0.0f;
         float time_combine = 0.0f;
         float time_distribute = 0.0f;
+        float time_discard = 0.0f;
         float time_write = 0.0f;
 
         // Time required for the generation of the mesh on the CPU
-        float time_loop_points = 0.0f;    // Time required for the inverse Bresenham step
-        float time_triangulation = 0.0f;  // Time required for the entire traiangulation process not including the inverse Bresenham step
+        float time_cpu = 0.0f;
+        float time_loop_simplification = 0.0f; // Time required for the inverse Bresenham step
+        float time_triangulation = 0.0f;       // Time required for the entire traiangulation process not including the inverse Bresenham step
         float time_loop_info = 0.0f;
         float time_loop_sort = 0.0f;
         float time_sweep_line = 0.0f;
         float time_adjacent_two = 0.0f;
         float time_adjacent_one = 0.0f;
+        float time_interval_search = 0.0f;
         float time_interval_update = 0.0f;
         float time_inside_outside = 0.0f;
+        float time_contour_split = 0.0f;
         float time_contour = 0.0f;
         uint32_t loop_count = 0;
         uint32_t segment_count = 0;

@@ -88,7 +88,7 @@ void main()
         uint segment_count = loop_range_list[range_index].segment_count;
         uint segment_offset = loop_range_list[range_index].segment_offset;
 
-        if(segment_count == 0 || segment_offset == EXPERIMENT_GENERATOR_INVALID_SEGMENT_OFFSET)
+        if(segment_count == 0 || segment_offset == LOOP_GENERATOR_INVALID_SEGMENT_OFFSET)
         {
             continue;
         }
@@ -104,7 +104,7 @@ void main()
             uint encoded_direction = texelFetch(vector_buffer, current_coord, 0).x;
             ivec2 direction = decode_direction(encoded_direction);
 
-            bool is_bridge = (encoded_direction & EXPERIMENT_GENERATOR_VECTOR_BRIDGE) != 0;
+            bool is_bridge = (encoded_direction & LOOP_GENERATOR_VECTOR_BRIDGE) != 0;
 
             if((encoded_direction & 0x03) != (current_direction & 0x03) || is_bridge)
             {
@@ -112,13 +112,13 @@ void main()
 
                 if(is_bridge)
                 {
-                    bool is_edge = (encoded_direction & EXPERIMENT_GENERATOR_VECTOR_EDGE) != 0;
+                    bool is_edge = (encoded_direction & LOOP_GENERATOR_VECTOR_EDGE) != 0;
 
                     ivec2 neighbour_coord = current_coord + get_bridge_neighbour_offset(current_coord, is_edge);
                     uint neighbour_value = texelFetch(vector_buffer, neighbour_coord, 0).x;
 
-                    bool is_neighbour_bridge = (neighbour_value & EXPERIMENT_GENERATOR_VECTOR_BRIDGE) != 0;
-                    bool is_neighbour_edge = (neighbour_value & EXPERIMENT_GENERATOR_VECTOR_EDGE) != 0;
+                    bool is_neighbour_bridge = (neighbour_value & LOOP_GENERATOR_VECTOR_BRIDGE) != 0;
+                    bool is_neighbour_edge = (neighbour_value & LOOP_GENERATOR_VECTOR_EDGE) != 0;
 
                     if((is_neighbour_bridge && (is_edge != is_neighbour_edge)))
                     {

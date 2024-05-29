@@ -78,7 +78,7 @@ void trace_line(ivec2 cell_coord, ivec2 cell_min, ivec2 cell_size, inout ivec2 e
             if(all(equal(end_coord, start_coord)))
             {
                 uint segment_flag = src_loop_range_list[src_range_index].flag;
-                src_loop_range_list[src_range_index].flag = segment_flag | EXPERIMENT_GENERATOR_LOOP_RANGE_PROCESSED;
+                src_loop_range_list[src_range_index].flag = segment_flag | LOOP_GENERATOR_LOOP_RANGE_PROCESSED;
 
                 segment_bitfield |= segment_flag;
                 segment_count += src_loop_range_list[src_range_index].segment_count;
@@ -188,7 +188,7 @@ void main()
         }
         
         uint segment_flag = src_loop_range_list[src_range_index].flag;
-        src_loop_range_list[src_range_index].flag = segment_flag | EXPERIMENT_GENERATOR_LOOP_RANGE_PROCESSED;
+        src_loop_range_list[src_range_index].flag = segment_flag | LOOP_GENERATOR_LOOP_RANGE_PROCESSED;
         
         ivec2 end_coord = ivec2(src_loop_range_list[src_range_index].end_coord);
         uint segment_count = src_loop_range_list[src_range_index].segment_count;
@@ -203,7 +203,7 @@ void main()
         dst_loop_range_list[dst_range_index].end_coord = u16vec2(end_coord);
         dst_loop_range_list[dst_range_index].flag = segment_bitfield;
         dst_loop_range_list[dst_range_index].segment_count = segment_count;
-        dst_loop_range_list[dst_range_index].segment_offset = EXPERIMENT_GENERATOR_INVALID_SEGMENT_OFFSET;
+        dst_loop_range_list[dst_range_index].segment_offset = LOOP_GENERATOR_INVALID_SEGMENT_OFFSET;
         dst_loop_range_list[dst_range_index].segment_length = segment_length;
     }
 
@@ -214,7 +214,7 @@ void main()
         uint src_range_index = src_range_offset + index;
         uint flag = src_loop_range_list[src_range_index].flag;
         
-        if((flag & EXPERIMENT_GENERATOR_LOOP_RANGE_PROCESSED) != 0)
+        if((flag & LOOP_GENERATOR_LOOP_RANGE_PROCESSED) != 0)
         {
             continue;
         }
@@ -230,7 +230,7 @@ void main()
             continue; //Loop already processed
         }
         
-        if((segment_bitfield & EXPERIMENT_GENERATOR_LOOP_CUT) != 0 || segment_length >= loop_min_length)
+        if((segment_bitfield & LOOP_GENERATOR_LOOP_CUT) != 0 || segment_length >= loop_min_length)
         {
             uint loop_index = atomicAdd(loop_count.loop_counter, 1);
             uint segment_offset = atomicAdd(loop_count.segment_counter, segment_count);
@@ -244,7 +244,7 @@ void main()
             dst_loop_range_list[dst_range_index].previous_coord = u16vec2(start_coord);
             dst_loop_range_list[dst_range_index].start_coord = u16vec2(start_coord);
             dst_loop_range_list[dst_range_index].end_coord = u16vec2(start_coord);
-            dst_loop_range_list[dst_range_index].flag = segment_bitfield | EXPERIMENT_GENERATOR_LOOP_RANGE_PROCESSED;
+            dst_loop_range_list[dst_range_index].flag = segment_bitfield | LOOP_GENERATOR_LOOP_RANGE_PROCESSED;
             dst_loop_range_list[dst_range_index].segment_count = segment_count;
             dst_loop_range_list[dst_range_index].segment_offset = segment_offset;
             dst_loop_range_list[dst_range_index].segment_length = segment_length;

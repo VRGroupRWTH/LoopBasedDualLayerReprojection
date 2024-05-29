@@ -98,7 +98,7 @@ void main()
         uint segment_count = dst_loop_range_list[dst_range_index].segment_count;
         uint segment_offset = dst_loop_range_list[dst_range_index].segment_offset;
 
-        if(segment_count == 0 || segment_offset == EXPERIMENT_GENERATOR_INVALID_SEGMENT_OFFSET)
+        if(segment_count == 0 || segment_offset == LOOP_GENERATOR_INVALID_SEGMENT_OFFSET)
         {
             continue;
         }

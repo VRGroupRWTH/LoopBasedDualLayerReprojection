@@ -75,9 +75,9 @@ ivec2 backward_closed[4] = ivec2[4]
     ivec2(-1,  0)
 );
 
-uint delta_depth_mask = (EXPERIMENT_GENERATOR_DELTA_DEPTH << 0) | (EXPERIMENT_GENERATOR_DELTA_DEPTH << 3) | (EXPERIMENT_GENERATOR_DELTA_DEPTH << 6) | (EXPERIMENT_GENERATOR_DELTA_DEPTH << 9);
-uint delta_normal_mask = (EXPERIMENT_GENERATOR_DELTA_NORMAL << 0) | (EXPERIMENT_GENERATOR_DELTA_NORMAL << 3) | (EXPERIMENT_GENERATOR_DELTA_NORMAL << 6) | (EXPERIMENT_GENERATOR_DELTA_NORMAL << 9);
-uint delta_object_id_mask = (EXPERIMENT_GENERATOR_DELTA_OBJECT_ID << 0) | (EXPERIMENT_GENERATOR_DELTA_OBJECT_ID << 3) | (EXPERIMENT_GENERATOR_DELTA_OBJECT_ID << 6) | (EXPERIMENT_GENERATOR_DELTA_OBJECT_ID << 9);
+uint delta_depth_mask = (LOOP_GENERATOR_DELTA_DEPTH << 0) | (LOOP_GENERATOR_DELTA_DEPTH << 3) | (LOOP_GENERATOR_DELTA_DEPTH << 6) | (LOOP_GENERATOR_DELTA_DEPTH << 9);
+uint delta_normal_mask = (LOOP_GENERATOR_DELTA_NORMAL << 0) | (LOOP_GENERATOR_DELTA_NORMAL << 3) | (LOOP_GENERATOR_DELTA_NORMAL << 6) | (LOOP_GENERATOR_DELTA_NORMAL << 9);
+uint delta_object_id_mask = (LOOP_GENERATOR_DELTA_OBJECT_ID << 0) | (LOOP_GENERATOR_DELTA_OBJECT_ID << 3) | (LOOP_GENERATOR_DELTA_OBJECT_ID << 6) | (LOOP_GENERATOR_DELTA_OBJECT_ID << 9);
 uint cut_loop_mask = delta_depth_mask | delta_object_id_mask;
 
 void load_sample(ivec2 coord, inout float depth, inout vec3 normal, inout uint object_id)
@@ -138,17 +138,17 @@ uint compare_samples(float depth1, vec3 normal1, uint object_id1, float depth2, 
 
     if(delta_depth >= depth_base_threshold + slope * depth_slope_threshold)
     {
-        delta_bitfield |= EXPERIMENT_GENERATOR_DELTA_DEPTH;
+        delta_bitfield |= LOOP_GENERATOR_DELTA_DEPTH;
     }
 
     if(delta_normal >= normal_threshold)
     {
-        delta_bitfield |= EXPERIMENT_GENERATOR_DELTA_NORMAL;
+        delta_bitfield |= LOOP_GENERATOR_DELTA_NORMAL;
     }
 
 	if(object_id1 != object_id2)
 	{
-		delta_bitfield |= EXPERIMENT_GENERATOR_DELTA_OBJECT_ID;
+		delta_bitfield |= LOOP_GENERATOR_DELTA_OBJECT_ID;
 	}
 
     return delta_bitfield;
@@ -217,12 +217,12 @@ void main()
     {
         uint side_bitfield = delta_bitfield & 0x07;
         
-        if((side_bitfield & (EXPERIMENT_GENERATOR_DELTA_DEPTH | EXPERIMENT_GENERATOR_DELTA_OBJECT_ID)) != 0)
+        if((side_bitfield & (LOOP_GENERATOR_DELTA_DEPTH | LOOP_GENERATOR_DELTA_OBJECT_ID)) != 0)
         {
             closed_bitfield |= 1;
         }
 
-        else if((side_bitfield & EXPERIMENT_GENERATOR_DELTA_NORMAL) != 0)
+        else if((side_bitfield & LOOP_GENERATOR_DELTA_NORMAL) != 0)
         {
             if(is_cut_loop)
             {
@@ -272,17 +272,17 @@ void main()
 
         if(is_cut_loop)
         {
-            encoded_direction |= EXPERIMENT_GENERATOR_VECTOR_CUT;
+            encoded_direction |= LOOP_GENERATOR_VECTOR_CUT;
         }
 
         else
         {
-            encoded_direction |= EXPERIMENT_GENERATOR_VECTOR_EDGE;
+            encoded_direction |= LOOP_GENERATOR_VECTOR_EDGE;
         }
 
         if((bridge_bitfield & forward_mask[index]) != 0)
         {
-            encoded_direction |= EXPERIMENT_GENERATOR_VECTOR_BRIDGE;
+            encoded_direction |= LOOP_GENERATOR_VECTOR_BRIDGE;
         }
 
         imageStore(vector_buffer, adjacent_coord, uvec4(encoded_direction));

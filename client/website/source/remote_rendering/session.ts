@@ -8,6 +8,7 @@ import { Renderer } from "./renderer";
 import { LayerResponseForm, Matrix, MatrixArray, MeshGeneratorType, MeshSettingsForm, RenderRequestForm, SessionCreateForm, VideoCodecType, VideoSettingsForm, WrapperModule } from "./wrapper";
 import { log_error, log_info } from "./log";
 import { mat4, vec2, vec3 } from "gl-matrix";
+import { Metadata } from "./metadata";
 
 const SESSION_FRAME_QUEUE_MAX_LENGTH = 8;
 
@@ -70,6 +71,8 @@ export class Session
     private animation_input : Animation = new Animation();
     private animation_output : Animation = new Animation();
 
+    private layer_metadata : Metadata[] = [];
+
     private frame_pool : Frame[] = [];
     private frame_queue : Frame[] = [];
     private frame_active : Frame | null = null;
@@ -105,6 +108,14 @@ export class Session
             if(!await this.animation_input.load(this.config.animation_file_name))
             {
                 return false;
+            }
+        }
+
+        if(this.config.mode == SessionMode.Benchmark)
+        {
+            for(let layer_index = 0; layer_index < this.config.layer_count; layer_index++)
+            {
+                this.layer_metadata.push(new Metadata());
             }
         }
 
@@ -322,6 +333,11 @@ export class Session
         else if(this.config.mode == SessionMode.Benchmark)
         {
             this.animation_output.set_projection_matrix(this.animation_input.get_projection_matrix());
+
+            for(let metadata of this.layer_metadata)
+            {
+                metadata.set_time_origin(time_origin);   
+            }
         }
 
         let projection_matrix = Layer.compute_projection_matrix() as Matrix;
@@ -398,10 +414,64 @@ export class Session
             this.request_interval = setInterval(this.on_request.bind(this), this.config.render_request_rate);
         }
 
-        const text_encoder = new TextEncoder();
-        const session_settings = text_encoder.encode(JSON.stringify(session_create));
+        const settings = 
+        {
+            session_setting: session_create,
+            mesh_settings: this.config.mesh_settings,
+            video_settings: this.config.video_settings
+        };
 
-        send_file(this.config.output_path + "session_settings.json", session_settings);
+        const text_encoder = new TextEncoder();
+        const settings_string = text_encoder.encode(JSON.stringify(settings, (key, value) =>
+        {
+            if(key == "mesh_generator")
+            {
+                if(value == this.wrapper.MeshGeneratorType.MESH_GENERATOR_TYPE_LINE)
+                {
+                    return "line";   
+                }
+
+                else if(value == this.wrapper.MeshGeneratorType.MESH_GENERATOR_TYPE_LOOP)
+                {
+                    return "loop";   
+                }
+            }
+
+            else if(key == "video_codec")
+            {
+                if(value == this.wrapper.VideoCodecType.VIDEO_CODEC_TYPE_H264)
+                {
+                    return "h264";   
+                }
+
+                else if(value == this.wrapper.VideoCodecType.VIDEO_CODEC_TYPE_H265)
+                {
+                    return "h265";   
+                }
+
+                else if(value == this.wrapper.VideoCodecType.VIDEO_CODEC_TYPE_H264)
+                {
+                    return "av1";   
+                }
+            }
+
+            else if(key == "mode")
+            {
+                if(value == this.wrapper.VideoCodecMode.VIDEO_CODEC_MODE_CONSTANT_BITRATE)
+                {
+                    return "constant bitrate";
+                }
+
+                else if(value == this.wrapper.VideoCodecMode.VIDEO_CODEC_MODE_CONSTANT_QUALITY)
+                {
+                    return "constant quality";
+                }
+            }
+
+            return value;
+        }));
+
+        send_file(this.config.output_path + "settings.json", settings_string);
     }
 
     private on_request()
@@ -431,6 +501,11 @@ export class Session
             if(this.animation_input.has_finished())
             {
                 return this.on_shutdown();
+            }
+
+            for(let metadata of this.layer_metadata)
+            {
+                metadata.submit_request(request.request_id);
             }
 
             const transform = this.animation_input.get_transform();
@@ -576,6 +651,7 @@ export class Session
         layer.form = form;
         layer.image_frame.request_id = form.request_id;
         layer.geometry_frame.request_id = form.request_id;
+        layer.time_point_response = performance.now();
 
         if(!this.image_decoders[layer_index].submit_frame(layer.image_frame, image_data))
         {
@@ -703,14 +779,20 @@ export class Session
     
                 if(outdated_frame != null)
                 {
+                    if(this.config.mode == SessionMode.Benchmark) //Store metdata of the frame
+                    {
+                        for(let layer_index = 0; layer_index < this.config.layer_count; layer_index++)
+                        {
+                            this.layer_metadata[layer_index].submit_layer(outdated_frame.layers[layer_index]);
+                        }   
+                    }
+
                     outdated_frame.clear();
                     
                     this.frame_pool.push(outdated_frame);
                 }
             }
         }
-
-        //TODO: Save the performance numbers of the incomming layers
     }
 
     private on_render()
@@ -864,6 +946,11 @@ export class Session
         else if(this.config.mode == SessionMode.Benchmark)
         {
             await this.animation_output.store(this.config.output_path + "animation_benchmark.json");   
+
+            for(let layer_index = 0; layer_index < this.config.layer_count; layer_index++)
+            {
+                await this.layer_metadata[layer_index].store(this.config.output_path + "metadata_layer_" + layer_index + ".json");
+            }
         }
 
         if(this.on_close != null)

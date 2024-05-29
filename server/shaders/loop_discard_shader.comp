@@ -4,7 +4,7 @@
 #include "shared_defines.glsl"
 #include "shared_math_library.glsl"
 
-layout(local_size_x = LOOP_GENERATOR_WRITE_WORK_GROUP_SIZE_X, local_size_y = LOOP_GENERATOR_WRITE_WORK_GROUP_SIZE_Y, local_size_z = 1) in;
+layout(local_size_x = LOOP_GENERATOR_DISCARD_WORK_GROUP_SIZE_X, local_size_y = LOOP_GENERATOR_DISCARD_WORK_GROUP_SIZE_Y, local_size_z = 1) in;
 
 layout(binding = 0, r8ui) uniform uimage2D vector_buffer;
 layout(binding = 1, r32ui) uniform readonly uimage2D loop_range_count_buffer;
@@ -42,7 +42,7 @@ void main()
         uint segment_count = loop_range_list[range_index].segment_count;
         uint segment_offset = loop_range_list[range_index].segment_offset;
 
-        if(segment_count == 0 || segment_offset != EXPERIMENT_GENERATOR_INVALID_SEGMENT_OFFSET) //Only if the loops is not long enough and was therefore discarded
+        if(segment_count == 0 || segment_offset != LOOP_GENERATOR_INVALID_SEGMENT_OFFSET) //Only if the loops is not long enough and was therefore discarded
         {
             continue;
         }
@@ -55,11 +55,11 @@ void main()
             uint encoded_direction = imageLoad(vector_buffer, current_coord).x;
             ivec2 direction = decode_direction(encoded_direction);
 
-            bool is_bridge = (encoded_direction & EXPERIMENT_GENERATOR_VECTOR_BRIDGE) != 0;
+            bool is_bridge = (encoded_direction & LOOP_GENERATOR_VECTOR_BRIDGE) != 0;
 
             if(is_bridge)
             {
-                encoded_direction &= ~EXPERIMENT_GENERATOR_VECTOR_BRIDGE; //Remove bridge flag
+                encoded_direction &= ~LOOP_GENERATOR_VECTOR_BRIDGE; //Remove bridge flag
 
                 imageStore(vector_buffer, current_coord, uvec4(encoded_direction));
             }

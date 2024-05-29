@@ -20,6 +20,12 @@ export class GeometryFrame
         this.index_buffer = index_buffer;
         this.vertex_buffer = vertex_buffer;
     }
+
+    clear()
+    {
+        this.decode_start = 0.0;
+        this.decode_end = 0.0;
+    }
 }
 
 export class GeometryDecodeTask

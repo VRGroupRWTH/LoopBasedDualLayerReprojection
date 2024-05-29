@@ -256,6 +256,7 @@ void LineTriangulation::process(const glm::uvec2& resolution, float depth_max, u
     }
     std::chrono::high_resolution_clock::time_point triangulation_end = std::chrono::high_resolution_clock::now();
     metadata.line.time_triangulation = std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(triangulation_end - triangulation_start).count();
+    metadata.line.line_count = this->line_segments.size();
 }
 
 void LineTriangulation::compute_line_segments()

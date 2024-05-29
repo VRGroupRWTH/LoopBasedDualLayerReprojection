@@ -4,7 +4,7 @@
 #include "shared_defines.glsl"
 #include "shared_math_library.glsl"
 
-layout(local_size_x = LOOP_GENERATOR_VECTOR_WORK_GROUP_SIZE_X, local_size_y = LOOP_GENERATOR_VECTOR_WORK_GROUP_SIZE_Y, local_size_z = 1) in;
+layout(local_size_x = LOOP_GENERATOR_SPLIT_WORK_GROUP_SIZE_X, local_size_y = LOOP_GENERATOR_SPLIT_WORK_GROUP_SIZE_Y, local_size_z = 1) in;
 
 layout(binding = 0) uniform usampler2D closed_buffer;
 layout(binding = 0, r8ui) uniform writeonly uimage2D vector_buffer;
@@ -159,11 +159,11 @@ void main()
         uint encoded_direction = 0;
         encoded_direction |= encode_direction(direction.xy);
         encoded_direction |= encode_direction(direction.zw) << 2;
-        encoded_direction |= EXPERIMENT_GENERATOR_VECTOR_EDGE;
+        encoded_direction |= LOOP_GENERATOR_VECTOR_EDGE;
 
         if((bridge_bitfield & forward_mask[index]) != 0)
         {
-            encoded_direction |= EXPERIMENT_GENERATOR_VECTOR_BRIDGE;
+            encoded_direction |= LOOP_GENERATOR_VECTOR_BRIDGE;
         }
 
         imageStore(vector_buffer, vector_coord, uvec4(encoded_direction));

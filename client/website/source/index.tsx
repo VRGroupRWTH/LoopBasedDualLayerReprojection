@@ -37,6 +37,7 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
         loop_depth_slope_threshold: default_mesh_config.mesh.loop?.depth_slope_threshold ?? 0.0,
         loop_normal_threshold: default_mesh_config.mesh.loop?.normal_threshold ?? 0.0,
         loop_triangle_scale: default_mesh_config.mesh.loop?.triangle_scale ?? 0.0,
+        loop_loop_length_min: default_mesh_config.mesh.loop?.loop_length_min ?? 0.0,
         loop_layer_config: "Dual-Layer",
         loop_use_normals: default_mesh_config.mesh.loop?.use_normals ? "Enabled" : "Disabled",
         loop_use_object_ids: default_mesh_config.mesh.loop?.use_object_ids ? "Enabled" : "Disabled",
@@ -178,6 +179,7 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
                 depth_slope_threshold: config.loop_depth_slope_threshold,
                 normal_threshold: config.loop_normal_threshold,
                 triangle_scale: config.loop_triangle_scale,
+                loop_length_min: config.loop_loop_length_min,
                 use_normals: convert_boolean(config.loop_use_normals) ? 1 : 0,
                 use_object_ids: convert_boolean(config.loop_use_object_ids) ? 1 : 0
             };
@@ -284,6 +286,7 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
                                     <SettingNumber label="Depth Base Threshold" value={config.loop_depth_base_threshold} set_value={value => set_config("loop_depth_base_threshold", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
                                     <SettingNumber label="Depth Slope Threshold" value={config.loop_depth_slope_threshold} set_value={value => set_config("loop_depth_slope_threshold", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
                                     <SettingNumber label="Normal Threshold" value={config.loop_normal_threshold} set_value={value => set_config("loop_normal_threshold", value)} min_value={0.0} max_value={10.0} type={SettingNumberType.Float} step={0.0001}></SettingNumber>
+                                    <SettingNumber label="Loop Length Min" value={config.loop_loop_length_min} set_value={value => set_config("loop_loop_length_min", value)} min_value={0.0} max_value={500.0}></SettingNumber>
                                     <SettingDropdown label="Layer Config" value={config.loop_layer_config} set_value={value => set_config("loop_layer_config", value)}>
                                         <option>Single-Layer</option>
                                         <option>Dual-Layer</option>

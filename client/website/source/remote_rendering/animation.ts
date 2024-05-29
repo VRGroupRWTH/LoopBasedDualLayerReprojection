@@ -38,7 +38,7 @@ export class Animation
         
         if(file.byteLength == 0)
         {
-            return false;   
+            return false;
         }
 
         const text_decoder = new TextDecoder;

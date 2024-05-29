@@ -1,5 +1,7 @@
 #include "line_generator.hpp"
 
+#include <chrono>
+
 bool LineQuadTreeLevel::create(const glm::uvec2& resolution)
 {
     uint32_t level_buffser_size = resolution.x * resolution.y * sizeof(uint8_t);
@@ -329,13 +331,18 @@ uint32_t LineQuadTree::get_level_count() const
 
 bool LineGeneratorFrame::triangulate(std::vector<shared::Vertex>& vertices, std::vector<shared::Index>& indices, shared::ViewMetadata& metadata, std::vector<MeshFeatureLine>& feature_lines, bool export_feature_lines)
 {
+    metadata.line.time_cpu = 0.0f;
     metadata.line.time_line_trace = 0.0f;
     metadata.line.time_triangulation = 0.0f;
+    metadata.line.line_count = 0;
 
     metadata.line.time_edge_detection = this->time_edge;
     metadata.line.time_quad_tree = this->time_quad_tree;
 
+    std::chrono::high_resolution_clock::time_point cpu_start = std::chrono::high_resolution_clock::now();
     this->triangulation.process(this->resolution, this->depth_max, this->line_length_min, this->depth_copy_pointer, this->quad_tree, vertices, indices, metadata, feature_lines, export_feature_lines);
+    std::chrono::high_resolution_clock::time_point cpu_end = std::chrono::high_resolution_clock::now();
+    metadata.line.time_cpu = std::chrono::duration_cast<std::chrono::duration<double, std::chrono::milliseconds::period>>(cpu_end - cpu_start).count();
 
     return true;
 }

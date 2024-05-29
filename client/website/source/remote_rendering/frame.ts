@@ -13,6 +13,8 @@ export class Layer
 {
     form : LayerResponseForm | null = null;
 
+    time_point_response : number = 0.0; //Absolute time points
+
     image_frame : ImageFrame;
     image_complete : boolean = false;
 
@@ -215,7 +217,8 @@ export class Frame
     {
         for(const layer of this.layers)
         {
-            layer.image_frame.close();
+            layer.image_frame.clear();
+            layer.geometry_frame.clear();
             
             layer.image_complete = false;
             layer.geometry_complete = false;
