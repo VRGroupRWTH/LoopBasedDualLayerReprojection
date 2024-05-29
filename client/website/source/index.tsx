@@ -41,7 +41,7 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
         loop_layer_config: "Dual-Layer",
         loop_use_normals: default_mesh_config.mesh.loop?.use_normals ? "Enabled" : "Disabled",
         loop_use_object_ids: default_mesh_config.mesh.loop?.use_object_ids ? "Enabled" : "Disabled",
-        video_mode: "Constant Bitrate",
+        video_mode: "Constant Quality",
         video_framerate: default_video_config.framerate,
         video_bitrate: default_video_config.bitrate,
         video_quality: default_video_config.quality,
@@ -286,7 +286,7 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
                                     <SettingNumber label="Depth Base Threshold" value={config.loop_depth_base_threshold} set_value={value => set_config("loop_depth_base_threshold", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
                                     <SettingNumber label="Depth Slope Threshold" value={config.loop_depth_slope_threshold} set_value={value => set_config("loop_depth_slope_threshold", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
                                     <SettingNumber label="Normal Threshold" value={config.loop_normal_threshold} set_value={value => set_config("loop_normal_threshold", value)} min_value={0.0} max_value={10.0} type={SettingNumberType.Float} step={0.0001}></SettingNumber>
-                                    <SettingNumber label="Triangle Scale" value={config.triangle_scale} set_value={value => set_config("triangle_scale", value)} min_value={0.0} max_value={10.0}></SettingNumber>
+                                    <SettingNumber label="Triangle Scale" value={config.loop_triangle_scale} set_value={value => set_config("loop_triangle_scale", value)} min_value={0.0} max_value={10.0}></SettingNumber>
                                     <SettingNumber label="Loop Length Min" value={config.loop_loop_length_min} set_value={value => set_config("loop_loop_length_min", value)} min_value={0.0} max_value={500.0}></SettingNumber>
                                     <SettingDropdown label="Layer Config" value={config.loop_layer_config} set_value={value => set_config("loop_layer_config", value)}>
                                         <option>Single-Layer</option>

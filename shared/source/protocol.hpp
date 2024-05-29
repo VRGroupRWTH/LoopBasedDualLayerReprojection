@@ -88,7 +88,7 @@ namespace shared
         VideoCodecMode mode = VIDEO_CODEC_MODE_CONSTANT_QUALITY;
         uint32_t framerate = 10;
         float bitrate = 1.0f;
-        float quality = 0.5f;
+        float quality = 1.0f;
     };
 
     struct LayerResponsePacket
