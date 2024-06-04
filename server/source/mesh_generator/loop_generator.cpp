@@ -26,7 +26,7 @@ bool LoopGeneratorFrame::triangulate(std::vector<shared::Vertex>& vertices, std:
     metadata.loop.time_base = this->time_base;
     metadata.loop.time_combine = this->time_combine;
     metadata.loop.time_distribute = this->time_distribute;
-    metadata.loop.time_discard = this->time_distribute;
+    metadata.loop.time_discard = this->time_discard;
     metadata.loop.time_write = this->time_write;
 
     std::chrono::high_resolution_clock::time_point cpu_start = std::chrono::high_resolution_clock::now();
@@ -136,7 +136,7 @@ MeshGeneratorFrame* LoopGenerator::create_frame()
     glGenTextures(1, &depth_buffer);
     glBindTexture(GL_TEXTURE_2D, depth_buffer);
 
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_DEPTH_COMPONENT16, this->resolution.x, this->resolution.y);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_DEPTH_COMPONENT32, this->resolution.x, this->resolution.y);
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);

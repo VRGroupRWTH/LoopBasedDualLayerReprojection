@@ -424,7 +424,7 @@ MeshGeneratorFrame* LineGenerator::create_frame()
     glGenTextures(1, &depth_buffer);
     glBindTexture(GL_TEXTURE_2D, depth_buffer);
 
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_DEPTH_COMPONENT16, this->resolution.x, this->resolution.y);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_DEPTH_COMPONENT32, this->resolution.x, this->resolution.y);
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
