@@ -59,7 +59,7 @@ server.exe --scene_directory="<path>\scenes" --study_directory="<path>\study"
 ```
 The server will then search for loadable scenes in the folder `scene_directory` while all results and logs are written to the folder `study_directory`.
 
-The client, on the other hand, can be easily started using the following terminal command:
+The client, on the other hand, can be easily started using administrative rights and the following terminal command:
 ```shell
 cd client/
 npm run dev
