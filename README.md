@@ -11,7 +11,7 @@ Several tools are required for the compilation of the client and server applicat
 - NodeJS ([Link](https://nodejs.org/en/download/package-manager))
 
 ### Dependencies
-The dependencies of the server can be easily downloaded using git and the following command
+The dependencies of the server can be easily downloaded using git and the following command:
 ```shell
 git submodule update --init --recursive
 ```
@@ -65,7 +65,7 @@ cd client/
 npm run dev
 ```
 
-After starting both applications, the server will be reachable by the port `9000` while the client is reachable by the port `443`. In some cases, it might be necessary to change the ports used by the server and client. The port used by the server can be changed in the file `server/source/application.cpp`. For that, add the desired port number as an argument to the `create` function call, as shown in the following:
+After starting both applications, the server will be reachable by the port `9000` while the client is reachable by the port `443`. In some cases, it might be necessary to change the ports used by the server and client. The port used by the server can be changed in the file `server/source/application.cpp`. For that, add the desired port number as an argument to the following `create` function call:
 ```c++
 if (!this->server->create(<port>))
 ```
