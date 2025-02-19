@@ -14,6 +14,10 @@ layout(binding = SCENE_INDIRECT_GREEN_DISTRIBUTION_BUFFER_BINDING_POINT) uniform
 layout(binding = SCENE_INDIRECT_BLUE_DISTRIBUTION_BUFFER_BINDING_POINT) uniform sampler3D scene_indirect_blue_distribution_buffer;
 layout(binding = SCENE_INDIRECT_OPACITY_BUFFER_BINDING_POINT) uniform sampler3D scene_indirect_opacity_buffer;
 
+layout(binding = SCENE_VOLUME_RED_DISTRIBUTION_BUFFER_BINDING_POINT) uniform sampler3D scene_volume_red_distribution_buffer;
+layout(binding = SCENE_VOLUME_GREEN_DISTRIBUTION_BUFFER_BINDING_POINT) uniform sampler3D scene_volume_green_distribution_buffer;
+layout(binding = SCENE_VOLUME_BLUE_DISTRIBUTION_BUFFER_BINDING_POINT) uniform sampler3D scene_volume_blue_distribution_buffer;
+
 layout(binding = SCENE_LIGHT_BUFFER_BINDING_POINT, std430) readonly buffer LightBuffer
 {
     Light lights[];
@@ -27,10 +31,16 @@ uniform float scene_material_metallic;
 
 uniform uint scene_light_count;
 
+uniform bool scene_indirect_enable;
 uniform float scene_indirect_intensity;
 uniform vec3 scene_indirect_cell_size;
 uniform vec3 scene_indirect_domain_min;
 uniform vec3 scene_indirect_domain_max;
+
+uniform bool scene_volume_enable;
+uniform float scene_volume_intensity;
+uniform vec3 scene_volume_domain_min;
+uniform vec3 scene_volume_domain_max;
 
 uniform vec3 scene_ambient_color;
 uniform float scene_exposure;
@@ -290,7 +300,7 @@ vec3 get_indirect_diffuse_radiance(vec3 surface_position, vec3 normal_direction)
     //Where center_distance_square is in meter^2
     const float center_distance_square = pow(length(scene_indirect_cell_size) / 4.0, 2); //Assume that the average distance to a cell center is 25% of the cell diagonal.
 
-    vec3 indirect_radiance = vec3(0.0); //Where indirect light is in watts / (meter^2 * str)
+    vec3 indirect_radiance = vec3(0.0); //Where indirect radiance is in watts / (meter^2 * str)
     indirect_radiance.x = max(0.0, spherical_harmonic_evaluate(-normal_direction, red_distribution)) / center_distance_square;
     indirect_radiance.y = max(0.0, spherical_harmonic_evaluate(-normal_direction, green_distribution)) / center_distance_square;
     indirect_radiance.z = max(0.0, spherical_harmonic_evaluate(-normal_direction, blue_distribution)) / center_distance_square;
@@ -304,7 +314,7 @@ vec3 get_indirect_glossy_radiance(vec3 surface_position, vec3 reflect_direction)
     const float sample_step = 0.2;
     const float sample_length = 4.0;
 
-    vec3 indirect_radiance = vec3(0.0); //Where indirect light is in watts / (meter^2 * str)
+    vec3 indirect_radiance = vec3(0.0); //Where indirect radiance is in watts / (meter^2 * str)
     float optical_depth = 0.0;
 
     for(float sample_distance = 0.0; sample_distance < sample_offset; sample_distance += sample_step)
@@ -343,6 +353,24 @@ vec3 get_indirect_glossy_radiance(vec3 surface_position, vec3 reflect_direction)
     return indirect_radiance;
 }
 
+//-- Volume Functions ----------------------------------------------------------------------------
+
+vec3 get_volume_diffuse_irradiance(vec3 surface_position, vec3 normal_direction)
+{
+    vec3 cell_coord = (surface_position - scene_volume_domain_min) / (scene_volume_domain_max - scene_volume_domain_min);
+
+    vec4 red_distribution = texture(scene_volume_red_distribution_buffer, cell_coord);
+    vec4 green_distribution = texture(scene_volume_green_distribution_buffer, cell_coord);
+    vec4 blue_distribution = texture(scene_volume_blue_distribution_buffer, cell_coord);
+
+    vec3 volume_irradiance = vec3(0.0); //Where volume irradiance is in watts / meter^2
+    volume_irradiance.x = max(0.0, spherical_harmonic_evaluate(normal_direction, red_distribution));
+    volume_irradiance.y = max(0.0, spherical_harmonic_evaluate(normal_direction, green_distribution));
+    volume_irradiance.z = max(0.0, spherical_harmonic_evaluate(normal_direction, blue_distribution));
+
+    return volume_irradiance;
+}
+
 //-- Tone-Mapping Functions ------------------------------------------------------------------------
 // Exposure based tone mapping
 //https://learnopengl.com/Advanced-Lighting/HDR
@@ -354,7 +382,7 @@ vec3 compute_tone_mapping(vec3 lighting, float exposure)
 
 //-- Public Function -------------------------------------------------------------------------------
 
-vec3 compute_lighting(vec3 view_position, vec3 surface_position, vec3 surface_normal, vec3 surface_tangent, vec2 surface_texture_coord)
+vec3 compute_lighting(vec3 view_position, vec3 surface_position, vec3 surface_normal, vec3 surface_tangent, vec2 surface_texture_coord, bool apply_tone_mapping)
 {
     Material material = load_material(surface_texture_coord);
 
@@ -380,15 +408,24 @@ vec3 compute_lighting(vec3 view_position, vec3 surface_position, vec3 surface_no
             lighting += compute_brdf(light_direction, normal_direction, view_direction, material) * get_light_radiance(light, surface_position) * get_shadow(light, surface_position) * dot(normal_direction, light_direction);
         }
 
-        //NOTE: The weights for the indirect illumination are not physically based
-        float indirect_diffuse_strength = 1.0;
-        float indirect_glossy_strength = 1.0 - smoothstep(0.0, 0.8, material.roughness);
+        if(scene_indirect_enable)
+        {
+            //NOTE: The weights for the indirect illumination are not physically based
+            float indirect_diffuse_strength = 1.0;
+            float indirect_glossy_strength = 1.0 - smoothstep(0.0, 0.8, material.roughness);
 
-        material.roughness = 1.0; //NOTE: Adjust roughness, since light propagation volumes can only deliver an approximation for the indirect lighting
-        lighting += scene_indirect_intensity * compute_brdf(normal_direction, normal_direction, view_direction, material) * get_indirect_diffuse_radiance(surface_position, normal_direction) * indirect_diffuse_strength * dot(normal_direction, normal_direction);
-        material.roughness = 0.5; //NOTE: Adjust roughness, since light propagation volumes can only deliver an approximation for the indirect lighting
-        lighting += scene_indirect_intensity * compute_brdf(reflect_direction, normal_direction, view_direction, material) * get_indirect_glossy_radiance(surface_position, reflect_direction) * indirect_glossy_strength * dot(normal_direction, reflect_direction);
+            material.roughness = 1.0; //NOTE: Adjust roughness, since light propagation volumes can only deliver an approximation for the indirect lighting
+            lighting += scene_indirect_intensity * compute_brdf(normal_direction, normal_direction, view_direction, material) * get_indirect_diffuse_radiance(surface_position, normal_direction) * indirect_diffuse_strength * dot(normal_direction, normal_direction);
+            material.roughness = 0.5; //NOTE: Adjust roughness, since light propagation volumes can only deliver an approximation for the indirect lighting
+            lighting += scene_indirect_intensity * compute_brdf(reflect_direction, normal_direction, view_direction, material) * get_indirect_glossy_radiance(surface_position, reflect_direction) * indirect_glossy_strength * dot(normal_direction, reflect_direction);
+        }
 
+        if(scene_volume_enable)
+        {
+            // Simulation of a diffuse reflector with equal light emission in all directions
+            lighting += scene_volume_intensity * compute_brdf_diffuse(material.base_color) * get_volume_diffuse_irradiance(surface_position, normal_direction);
+        }
+        
         lighting *= (1.0 - material.occlusion);
     }
 
@@ -397,7 +434,12 @@ vec3 compute_lighting(vec3 view_position, vec3 surface_position, vec3 surface_no
         lighting += material.emissive;
     }
 
-    return compute_tone_mapping(lighting, scene_exposure);
+    if(apply_tone_mapping)
+    {
+        return compute_tone_mapping(lighting, scene_exposure);
+    }
+
+    return lighting;
 }
 
 #endif

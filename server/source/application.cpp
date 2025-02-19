@@ -19,7 +19,7 @@ bool Application::create(uint32_t argument_count, const char** argument_list)
     {
         this->scene = new Scene;
 
-        if (!this->scene->create(this->command_parser.get_scene_file_name().value(), this->command_parser.get_scene_scale(), this->command_parser.get_scene_exposure(), this->command_parser.get_scene_indirect_intensity(), this->command_parser.get_sky_file_name(), this->command_parser.get_sky_intensity()))
+        if (!this->scene->create(this->command_parser.get_scene_file_name().value(), this->command_parser.get_scene_scale(), this->command_parser.get_scene_exposure(), this->command_parser.get_scene_indirect_intensity(), this->command_parser.get_sky_file_name(), this->command_parser.get_sky_intensity(), this->command_parser.get_sky_rotation()))
         {
             return false;
         }
@@ -281,7 +281,7 @@ bool Application::process_session()
 
             this->scene = new Scene();
 
-            if (!this->scene->create(scene_file_name, session_create.scene_scale, session_create.scene_exposure, session_create.scene_indirect_intensity, sky_file_name, session_create.sky_intensity))
+            if (!this->scene->create(scene_file_name, session_create.scene_scale, session_create.scene_exposure, session_create.scene_indirect_intensity, sky_file_name, session_create.sky_intensity, this->command_parser.get_sky_rotation()))
             {
                 spdlog::error("Application: Can't create scene!");
 

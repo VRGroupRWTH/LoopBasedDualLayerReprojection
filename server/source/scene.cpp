@@ -9,7 +9,7 @@
 #include <spdlog/spdlog.h>
 #include <memory>
 
-bool Scene::create(const std::string& scene_file_name, float scale, float exposure, float indirect_intensity, std::optional<std::string> sky_file_name, float sky_intensity)
+bool Scene::create(const std::string& scene_file_name, float scale, float exposure, float indirect_intensity, std::optional<std::string> sky_file_name, float sky_intensity, float sky_rotation)
 {
     spdlog::info("Scene: Loading scene '{}'", scene_file_name);
 
@@ -43,13 +43,19 @@ bool Scene::create(const std::string& scene_file_name, float scale, float exposu
 
     if (sky_file_name.has_value())
     {
-        if (!this->create_sky(sky_file_name.value(), sky_intensity))
+        if (!this->create_sky(sky_file_name.value(), sky_intensity, sky_rotation))
         {
             return false;
         }
     }
 
+#if SCENE_INDIRECT_ENABLE
     this->compute_indirect_domain();
+#endif
+
+#if SCENE_VOLUME_ENABLE
+    this->compute_volume_domain();
+#endif
 
     if (!this->create_shaders())
     {
@@ -61,7 +67,15 @@ bool Scene::create(const std::string& scene_file_name, float scale, float exposu
         return false;
     }
 
+#if SCENE_INDIRECT_ENABLE
     this->compute_indirect();
+#else
+    this->compute_light();
+#endif
+
+#if SCENE_VOLUME_ENABLE
+    this->compute_volume();
+#endif
 
     this->scale = scale;
     this->exposure = exposure;
@@ -90,13 +104,26 @@ void Scene::render(const Shader& shader) const
 
     shader["scene_ambient_color"] = this->ambient_color;
     shader["scene_exposure"] = this->exposure;
-
     shader["scene_light_count"] = (uint32_t)this->lights.size();
 
+#if SCENE_INDIRECT_ENABLE
+    shader["scene_indirect_enable"] = true;
     shader["scene_indirect_intensity"] = this->indirect_intensity;
     shader["scene_indirect_cell_size"] = this->indirect_cell_size;
     shader["scene_indirect_domain_min"] = this->indirect_domain_min;
     shader["scene_indirect_domain_max"] = this->indirect_domain_max;
+#else
+    shader["scene_indirect_enable"] = false;
+#endif
+
+#if SCENE_VOLUME_ENABLE
+    shader["scene_volume_enable"] = true;
+    shader["scene_volume_intensity"] = this->indirect_intensity;
+    shader["scene_volume_domain_min"] = this->volume_domain_min;
+    shader["scene_volume_domain_max"] = this->volume_domain_max;
+#else
+    shader["scene_volume_enable"] = false;
+#endif
 
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SCENE_LIGHT_BUFFER_BINDING_POINT, this->light_buffer);
 
@@ -105,6 +132,7 @@ void Scene::render(const Shader& shader) const
     glActiveTexture(GL_TEXTURE0 + SCENE_LIGHT_DEPTH_CUBE_ARRAY_BUFFER_BINDING_POINT);
     glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, this->light_depth_cube_array_buffer);
 
+#if SCENE_INDIRECT_ENABLE
     glActiveTexture(GL_TEXTURE0 + SCENE_INDIRECT_RED_DISTRIBUTION_BUFFER_BINDING_POINT);
     glBindTexture(GL_TEXTURE_3D, this->indirect_red_distribution_buffers[2]);
     glActiveTexture(GL_TEXTURE0 + SCENE_INDIRECT_GREEN_DISTRIBUTION_BUFFER_BINDING_POINT);
@@ -113,6 +141,16 @@ void Scene::render(const Shader& shader) const
     glBindTexture(GL_TEXTURE_3D, this->indirect_blue_distribution_buffers[2]);
     glActiveTexture(GL_TEXTURE0 + SCENE_INDIRECT_OPACITY_BUFFER_BINDING_POINT);
     glBindTexture(GL_TEXTURE_3D, this->indirect_opacity_buffer);
+#endif
+
+#if SCENE_VOLUME_ENABLE
+    glActiveTexture(GL_TEXTURE0 + SCENE_VOLUME_RED_DISTRIBUTION_BUFFER_BINDING_POINT);
+    glBindTexture(GL_TEXTURE_3D, this->volume_red_distribution_buffers[1]);
+    glActiveTexture(GL_TEXTURE0 + SCENE_VOLUME_GREEN_DISTRIBUTION_BUFFER_BINDING_POINT);
+    glBindTexture(GL_TEXTURE_3D, this->volume_green_distribution_buffers[1]);
+    glActiveTexture(GL_TEXTURE0 + SCENE_VOLUME_BLUE_DISTRIBUTION_BUFFER_BINDING_POINT);
+    glBindTexture(GL_TEXTURE_3D, this->volume_blue_distribution_buffers[1]);
+#endif
 
     for(const Object& object : this->objects)
     {
@@ -166,6 +204,8 @@ void Scene::render(const Shader& shader) const
     glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
     glActiveTexture(GL_TEXTURE0 + SCENE_LIGHT_DEPTH_CUBE_ARRAY_BUFFER_BINDING_POINT);
     glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, 0);
+
+#if SCENE_INDIRECT_ENABLE
     glActiveTexture(GL_TEXTURE0 + SCENE_INDIRECT_RED_DISTRIBUTION_BUFFER_BINDING_POINT);
     glBindTexture(GL_TEXTURE_3D, 0);
     glActiveTexture(GL_TEXTURE0 + SCENE_INDIRECT_GREEN_DISTRIBUTION_BUFFER_BINDING_POINT);
@@ -174,6 +214,17 @@ void Scene::render(const Shader& shader) const
     glBindTexture(GL_TEXTURE_3D, 0);
     glActiveTexture(GL_TEXTURE0 + SCENE_INDIRECT_OPACITY_BUFFER_BINDING_POINT);
     glBindTexture(GL_TEXTURE_3D, 0);
+#endif
+
+#if SCENE_VOLUME_ENABLE
+    glActiveTexture(GL_TEXTURE0 + SCENE_VOLUME_RED_DISTRIBUTION_BUFFER_BINDING_POINT);
+    glBindTexture(GL_TEXTURE_3D, 0);
+    glActiveTexture(GL_TEXTURE0 + SCENE_VOLUME_GREEN_DISTRIBUTION_BUFFER_BINDING_POINT);
+    glBindTexture(GL_TEXTURE_3D, 0);
+    glActiveTexture(GL_TEXTURE0 + SCENE_VOLUME_BLUE_DISTRIBUTION_BUFFER_BINDING_POINT);
+    glBindTexture(GL_TEXTURE_3D, 0);
+#endif
+
     glActiveTexture(GL_TEXTURE0);
 
     glDisable(GL_CULL_FACE);
@@ -369,18 +420,26 @@ bool Scene::create_objects(const aiScene* scene, float scale)
                 Vertex vertex;
                 vertex.position = glm::make_vec3(&position.x) * scale;
                 vertex.normal = glm::make_vec3(&normal.x);
-                vertex.tangent = glm::make_vec3(&tangent.x);
-                vertex.texture_coord = glm::make_vec2(&texture_coord.x);
 
-                glm::vec3 vertex_bitangent = glm::make_vec3(&bitangent.x);
-                glm::vec3 vertex_normal = glm::cross(vertex.tangent, vertex_bitangent);
-
-                //Convert to right-handed coordinate system
-                if (glm::dot(vertex.normal, vertex_normal) < 0.0)
+                if (scene_mesh->mTangents != nullptr)
                 {
-                    vertex.tangent = -vertex.tangent;
+                    vertex.tangent = glm::make_vec3(&tangent.x);
+
+                    glm::vec3 vertex_bitangent = glm::make_vec3(&bitangent.x);
+                    glm::vec3 vertex_normal = glm::cross(vertex.tangent, vertex_bitangent);
+
+                    //Convert to right-handed coordinate system
+                    if (glm::dot(vertex.normal, vertex_normal) > 0.0)
+                    {
+                        vertex.tangent = -vertex.tangent;
+                    }
                 }
 
+                if (scene_mesh->mTextureCoords[0] != nullptr)
+                {
+                    vertex.texture_coord = glm::make_vec2(&texture_coord.x);
+                }
+                
                 vertices.push_back(vertex);
             }
         }
@@ -649,7 +708,7 @@ bool Scene::create_light(const aiScene* scene, float scale)
     return true;
 }
 
-bool Scene::create_sky(const std::string& sky_file_name, float sky_intensity)
+bool Scene::create_sky(const std::string& sky_file_name, float sky_intensity, float sky_rotation)
 {
     Texture* texture = nullptr;
 
@@ -685,7 +744,7 @@ bool Scene::create_sky(const std::string& sky_file_name, float sky_intensity)
         for (uint32_t segment = 0; segment < SCENE_SKY_SPHERE_SEGMENTS; segment++)
         {
             float coord_u = (float)segment / (float)(SCENE_SKY_SPHERE_SEGMENTS - 1);
-            float longitude = glm::two_pi<float>() * coord_u;
+            float longitude = glm::two_pi<float>() * coord_u + glm::radians(sky_rotation);
 
             glm::vec3 position = sphere_center;
             position.x += sphere_radius * glm::cos(longitude) * glm::sin(latitude);
@@ -1249,40 +1308,14 @@ bool Scene::create_texture_from_color(const glm::vec4& color, GLenum format, Tex
     return true;
 }
 
-void Scene::compute_indirect_domain()
-{
-    glm::vec3 scene_center = (this->scene_min + this->scene_max) / 2.0f;
-    glm::vec3 scene_size = this->scene_max - this->scene_min;
-
-    this->indirect_cell_size = glm::vec3(SCENE_INDIRECT_DEFAULT_CELL_SIZE);
-    this->indirect_cell_count = glm::uvec3(glm::max(glm::ceil(scene_size / this->indirect_cell_size), glm::vec3(1.0f)));
-
-    uint32_t indirect_pixel_count = this->indirect_cell_count.x * this->indirect_cell_count.y * this->indirect_cell_count.z;
-    uint32_t memory_size = (indirect_pixel_count * (9 * sizeof(glm::vec4) + 3 * sizeof(uint32_t) + sizeof(glm::u8vec4))) / (1024 * 1024); // In MiB
-
-    if (memory_size > SCENE_INDIRECT_MEMORY_LIMIT)
-    {
-        float factor_scene = (scene_size.x * scene_size.y * scene_size.z) * (9 * sizeof(glm::vec4) + 3 * sizeof(uint32_t) + sizeof(glm::u8vec4));
-        float factor_limit = SCENE_INDIRECT_MEMORY_LIMIT * 1024 * 1024;
-
-        this->indirect_cell_size = glm::vec3(std::cbrt(factor_scene / factor_limit));
-        this->indirect_cell_count = glm::uvec3(glm::max(glm::ceil(scene_size / this->indirect_cell_size), glm::vec3(1.0f)));
-
-        spdlog::warn("Indirect memory limit reached!");
-    }
-
-    this->indirect_domain_min = scene_center - 0.5f * this->indirect_cell_size * glm::vec3(this->indirect_cell_count);
-    this->indirect_domain_max = scene_center + 0.5f * this->indirect_cell_size * glm::vec3(this->indirect_cell_count);
-    this->indirect_iteration_count = 2 * glm::max(this->indirect_cell_count.x, glm::max(this->indirect_cell_count.y, this->indirect_cell_count.z));
-}
-
 bool Scene::create_shaders()
 {
     ShaderDefines defines;
     defines.set_define_from_file("#include \"shared_defines.glsl\"", SHADER_DIRECTORY"shared_defines.glsl");
     defines.set_define_from_file("#include \"shared_math_library.glsl\"", SHADER_DIRECTORY"shared_math_library.glsl");
+    defines.set_define_from_file("#include \"shared_light_library.glsl\"", SHADER_DIRECTORY"shared_light_library.glsl");
     defines.set_define_from_file("#include \"shared_indirect_library.glsl\"", SHADER_DIRECTORY"shared_indirect_library.glsl");
-
+    
     if (!this->light_shader.load_shader(SHADER_DIRECTORY"scene_light_shader.vert", SHADER_TYPE_VERTEX, defines))
     {
         return false;
@@ -1298,6 +1331,7 @@ bool Scene::create_shaders()
         return false;
     }
 
+#if SCENE_INDIRECT_ENABLE
     if (!this->indirect_inject_shader.load_shader(SHADER_DIRECTORY"scene_indirect_inject_shader.vert", SHADER_TYPE_VERTEX, defines))
     {
         return false;
@@ -1357,6 +1391,45 @@ bool Scene::create_shaders()
     {
         return false;
     }
+#endif
+
+#if SCENE_VOLUME_ENABLE
+    if (!this->volume_capture_shader.load_shader(SHADER_DIRECTORY"scene_volume_capture_shader.vert", SHADER_TYPE_VERTEX, defines))
+    {
+        return false;
+    }
+
+    if (!this->volume_capture_shader.load_shader(SHADER_DIRECTORY"scene_volume_capture_shader.frag", SHADER_TYPE_FRAGMENT, defines))
+    {
+        return false;
+    }
+
+    if (!this->volume_capture_shader.link_program())
+    {
+        return false;
+    }
+
+    if (!this->volume_irradiance_shader.load_shader(SHADER_DIRECTORY"scene_volume_irradiance_shader.comp", SHADER_TYPE_COMPUTE, defines))
+    {
+        return false;
+    }
+
+    if (!this->volume_irradiance_shader.link_program())
+    {
+        return false;
+    }
+
+    if (!this->volume_integrate_shader.load_shader(SHADER_DIRECTORY"scene_volume_integrate_shader.comp", SHADER_TYPE_COMPUTE, defines))
+    {
+        return false;
+    }
+
+    if (!this->volume_integrate_shader.link_program())
+    {
+        return false;
+    }
+
+#endif
 
     return true;
 }
@@ -1514,17 +1587,18 @@ bool Scene::create_buffers()
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-    if (!this->create_color_distribution_buffers(this->indirect_red_distribution_buffers))
+#if SCENE_INDIRECT_ENABLE
+    if (!this->create_color_distribution_buffers(this->indirect_cell_count, this->indirect_red_distribution_buffers))
     {
         return false;
     }
 
-    if (!this->create_color_distribution_buffers(this->indirect_green_distribution_buffers))
+    if (!this->create_color_distribution_buffers(this->indirect_cell_count, this->indirect_green_distribution_buffers))
     {
         return false;
     }
 
-    if (!this->create_color_distribution_buffers(this->indirect_blue_distribution_buffers))
+    if (!this->create_color_distribution_buffers(this->indirect_cell_count, this->indirect_blue_distribution_buffers))
     {
         return false;
     }
@@ -1589,11 +1663,90 @@ bool Scene::create_buffers()
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+#endif
+
+#if SCENE_VOLUME_ENABLE
+    if (!this->create_color_distribution_buffers(this->volume_cell_count, this->volume_red_distribution_buffers))
+    {
+        return false;
+    }
+
+    if (!this->create_color_distribution_buffers(this->volume_cell_count, this->volume_green_distribution_buffers))
+    {
+        return false;
+    }
+
+    if (!this->create_color_distribution_buffers(this->volume_cell_count, this->volume_blue_distribution_buffers))
+    {
+        return false;
+    }
+
+    glGenTextures(1, &this->volume_capture_depth_buffer);
+    glBindTexture(GL_TEXTURE_2D, this->volume_capture_depth_buffer);
+
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_DEPTH_COMPONENT16, SCENE_VOLUME_CAPTURE_SIZE, SCENE_VOLUME_CAPTURE_SIZE);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    glGenTextures(1, &this->volume_capture_color_buffer);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, this->volume_capture_color_buffer);
+
+    glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGBA16F, SCENE_VOLUME_CAPTURE_SIZE, SCENE_VOLUME_CAPTURE_SIZE, 6);
+
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+
+    glGenTextures(1, &this->volume_irradiance_buffer);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, this->volume_irradiance_buffer);
+
+    glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGBA16F, SCENE_VOLUME_CAPTURE_SIZE, SCENE_VOLUME_CAPTURE_SIZE, 6);
+
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+
+    for (uint32_t index = 0; index < this->volume_capture_frame_buffers.size(); index++)
+    {
+        glGenFramebuffers(1, &this->volume_capture_frame_buffers[index]);
+        glBindFramebuffer(GL_FRAMEBUFFER, this->volume_capture_frame_buffers[index]);
+
+        glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, this->volume_capture_depth_buffer, 0);
+        glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, this->volume_capture_color_buffer, 0, index);
+
+        std::vector<GLenum> draw_buffers =
+        {
+            GL_COLOR_ATTACHMENT0
+        };
+
+        glDrawBuffers(draw_buffers.size(), draw_buffers.data());
+
+        GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+
+        if (status != GL_FRAMEBUFFER_COMPLETE)
+        {
+            return false;
+        }
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+#endif
 
     return true;
 }
 
-bool Scene::create_color_distribution_buffers(std::array<GLuint, 3>& distribution_buffers)
+bool Scene::create_color_distribution_buffers(const glm::uvec3& cell_count, std::span<GLuint> distribution_buffers)
 {
     glm::vec4 border_color = glm::vec4(0.0);
 
@@ -1604,7 +1757,7 @@ bool Scene::create_color_distribution_buffers(std::array<GLuint, 3>& distributio
         glGenTextures(1, &distribution_buffer);
         glBindTexture(GL_TEXTURE_3D, distribution_buffer);
 
-        glTexStorage3D(GL_TEXTURE_3D, 1, GL_RGBA16F, this->indirect_cell_count.x, this->indirect_cell_count.y, this->indirect_cell_count.z);
+        glTexStorage3D(GL_TEXTURE_3D, 1, GL_RGBA16F, cell_count.x, cell_count.y, cell_count.z);
 
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -1695,6 +1848,48 @@ void Scene::compute_light(const Light& light, uint32_t array_index)
     glBindVertexArray(0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
+
+void Scene::compute_light()
+{
+    for (const Light& light : this->lights)
+    {
+        for (uint32_t array_index = 0; array_index < light.light_array_size; array_index++)
+        {
+            glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT);
+
+            this->compute_light(light, array_index);
+        }
+    }
+}
+
+#if SCENE_INDIRECT_ENABLE
+void Scene::compute_indirect_domain()
+{
+    glm::vec3 scene_center = (this->scene_min + this->scene_max) / 2.0f;
+    glm::vec3 scene_size = this->scene_max - this->scene_min;
+
+    this->indirect_cell_size = glm::vec3(SCENE_INDIRECT_DEFAULT_CELL_SIZE);
+    this->indirect_cell_count = glm::uvec3(glm::max(glm::ceil(scene_size / this->indirect_cell_size), glm::vec3(1.0f)));
+
+    uint32_t indirect_pixel_count = this->indirect_cell_count.x * this->indirect_cell_count.y * this->indirect_cell_count.z;
+    uint32_t memory_size = (indirect_pixel_count * (9 * sizeof(glm::vec4) + 3 * sizeof(uint32_t) + sizeof(glm::u8vec4))) / (1024 * 1024); // In MiB
+
+    if (memory_size > SCENE_INDIRECT_MEMORY_LIMIT)
+    {
+        float factor_scene = (scene_size.x * scene_size.y * scene_size.z) * (9 * sizeof(glm::vec4) + 3 * sizeof(uint32_t) + sizeof(glm::u8vec4));
+        float factor_limit = SCENE_INDIRECT_MEMORY_LIMIT * 1024 * 1024;
+
+        this->indirect_cell_size = glm::vec3(std::cbrt(factor_scene / factor_limit));
+        this->indirect_cell_count = glm::uvec3(glm::max(glm::ceil(scene_size / this->indirect_cell_size), glm::vec3(1.0f)));
+
+        spdlog::warn("Indirect memory limit reached!");
+    }
+
+    this->indirect_domain_min = scene_center - 0.5f * this->indirect_cell_size * glm::vec3(this->indirect_cell_count);
+    this->indirect_domain_max = scene_center + 0.5f * this->indirect_cell_size * glm::vec3(this->indirect_cell_count);
+    this->indirect_iteration_count = 2 * glm::max(this->indirect_cell_count.x, glm::max(this->indirect_cell_count.y, this->indirect_cell_count.z));
+}
+
 
 void Scene::compute_indirect()
 {
@@ -1907,6 +2102,171 @@ void Scene::compute_indirect()
     this->light_normal_buffer = 0;
     this->light_flux_buffer = 0;
 }
+#endif
+
+#if SCENE_VOLUME_ENABLE
+void Scene::compute_volume_domain()
+{
+    glm::vec3 scene_center = (this->scene_min + this->scene_max) / 2.0f;
+    glm::vec3 scene_size = this->scene_max - this->scene_min;
+
+    this->volume_cell_size = glm::vec3(SCENE_VOLUME_DEFAULT_CELL_SIZE);
+    this->volume_cell_count = glm::uvec3(glm::max(glm::ceil(scene_size / this->volume_cell_size), glm::vec3(1.0f)));
+
+    uint32_t volume_pixel_count = this->volume_cell_count.x * this->volume_cell_count.y * this->volume_cell_count.z;
+    uint32_t memory_size = (volume_pixel_count * (9 * sizeof(glm::vec4))) / (1024 * 1024); // In MiB
+
+    if (memory_size > SCENE_VOLUME_MEMORY_LIMIT)
+    {
+        float factor_scene = (scene_size.x * scene_size.y * scene_size.z) * (9 * sizeof(glm::vec4));
+        float factor_limit = SCENE_VOLUME_MEMORY_LIMIT * 1024 * 1024;
+
+        this->volume_cell_size = glm::vec3(std::cbrt(factor_scene / factor_limit));
+        this->volume_cell_count = glm::uvec3(glm::max(glm::ceil(scene_size / this->volume_cell_size), glm::vec3(1.0f)));
+
+        spdlog::warn("Volume memory limit reached!");
+    }
+
+    this->volume_domain_min = scene_center - 0.5f * this->volume_cell_size * glm::vec3(this->volume_cell_count);
+    this->volume_domain_max = scene_center + 0.5f * this->volume_cell_size * glm::vec3(this->volume_cell_count);
+}
+
+void Scene::compute_volume()
+{
+    glClearTexImage(this->volume_red_distribution_buffers[1], 0, GL_RGBA, GL_FLOAT, nullptr);
+    glClearTexImage(this->volume_green_distribution_buffers[1], 0, GL_RGBA, GL_FLOAT, nullptr);
+    glClearTexImage(this->volume_blue_distribution_buffers[1], 0, GL_RGBA, GL_FLOAT, nullptr);
+
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+    for (uint32_t cell_z = 0; cell_z < this->volume_cell_count.z; cell_z++)
+    {
+        for (uint32_t cell_y = 0; cell_y < this->volume_cell_count.y; cell_y++)
+        {
+            for (uint32_t cell_x = 0; cell_x < this->volume_cell_count.x; cell_x++)
+            {
+                glm::ivec3 volume_cell = glm::ivec3(cell_x, cell_y, cell_z);
+
+                this->compute_volume_cell(volume_cell);
+            }
+        }
+
+        glFinish();
+
+        spdlog::info("Volume Slice " + std::to_string(cell_z) + " of " + std::to_string(this->volume_cell_count.z));
+    }
+
+    glMemoryBarrier(GL_TEXTURE_UPDATE_BARRIER_BIT);
+
+    glCopyImageSubData(this->volume_red_distribution_buffers[0], GL_TEXTURE_3D, 0, 0, 0, 0, this->volume_red_distribution_buffers[1], GL_TEXTURE_3D, 0, 0, 0, 0, this->volume_cell_count.x, this->volume_cell_count.y, this->volume_cell_count.z);
+    glCopyImageSubData(this->volume_green_distribution_buffers[0], GL_TEXTURE_3D, 0, 0, 0, 0, this->volume_green_distribution_buffers[1], GL_TEXTURE_3D, 0, 0, 0, 0, this->volume_cell_count.x, this->volume_cell_count.y, this->volume_cell_count.z);
+    glCopyImageSubData(this->volume_blue_distribution_buffers[0], GL_TEXTURE_3D, 0, 0, 0, 0, this->volume_blue_distribution_buffers[1], GL_TEXTURE_3D, 0, 0, 0, 0, this->volume_cell_count.x, this->volume_cell_count.y, this->volume_cell_count.z);
+
+    //Delete textures that are not used anymore
+    glDeleteTextures(1, &this->volume_red_distribution_buffers[0]);
+    glDeleteTextures(1, &this->volume_green_distribution_buffers[0]);
+    glDeleteTextures(1, &this->volume_blue_distribution_buffers[0]);
+
+    this->volume_red_distribution_buffers[0] = 0;
+    this->volume_green_distribution_buffers[0] = 0;
+    this->volume_blue_distribution_buffers[0] = 0;
+}
+
+void Scene::compute_volume_cell(const glm::ivec3 volume_cell)
+{
+    glm::vec3 scene_size = this->scene_max - this->scene_min;
+    float scene_diagonal = glm::length(scene_size);
+
+    glm::vec3 volume_position = this->volume_domain_min + (glm::vec3(volume_cell) + glm::vec3(0.5f)) * this->volume_cell_size;
+    glm::mat4 volume_projection = glm::perspective(glm::half_pi<float>(), 1.0f, SCENE_LIGHT_NEAR_DISTANCE, scene_diagonal);
+    std::array<glm::mat4, 6> volume_view =
+    {
+        glm::lookAt(volume_position, volume_position + glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
+        glm::lookAt(volume_position, volume_position + glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
+        glm::lookAt(volume_position, volume_position + glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+        glm::lookAt(volume_position, volume_position + glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f)),
+        glm::lookAt(volume_position, volume_position + glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
+        glm::lookAt(volume_position, volume_position + glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, -1.0f, 0.0f))
+    };
+
+    std::array<glm::mat3, 6> volume_transform =
+    {
+        glm::inverse(glm::lookAt(glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f))),
+        glm::inverse(glm::lookAt(glm::vec3(0.0f), glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f))),
+        glm::inverse(glm::lookAt(glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f))),
+        glm::inverse(glm::lookAt(glm::vec3(0.0f), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f))),
+        glm::inverse(glm::lookAt(glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, -1.0f, 0.0f))),
+        glm::inverse(glm::lookAt(glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, -1.0f, 0.0f)))
+    };
+    
+    glEnable(GL_DEPTH_TEST);
+
+    glClearDepth(1.0f);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+
+    this->volume_capture_shader.use_shader();
+
+    for (uint32_t index = 0; index < this->volume_capture_frame_buffers.size(); index++)
+    {
+        glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, this->volume_capture_frame_buffers[index]);
+
+        glViewport(0, 0, SCENE_VOLUME_CAPTURE_SIZE, SCENE_VOLUME_CAPTURE_SIZE);
+        glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+
+        this->volume_capture_shader["scene_volume_position"] = volume_position;
+        this->volume_capture_shader["scene_volume_matrix"] = volume_projection * volume_view[index];
+        this->render(this->volume_capture_shader);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+
+    this->volume_capture_shader.use_default();
+
+    glDisable(GL_DEPTH_TEST);
+
+    glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
+
+    glBindImageTexture(0, this->volume_irradiance_buffer, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, this->volume_capture_color_buffer);
+
+    this->volume_irradiance_shader.use_shader();
+    this->volume_irradiance_shader["scene_volume_transform[0]"] = volume_transform;
+
+    glm::uvec2 work_group_size = glm::uvec2(SCENE_VOLUME_IRRADIANCE_WORK_GROUP_SIZE_X, SCENE_VOLUME_IRRADIANCE_WORK_GROUP_SIZE_Y);
+    glm::uvec2 work_group_count = (glm::uvec2(SCENE_VOLUME_CAPTURE_SIZE) + work_group_size - glm::uvec2(1)) / work_group_size;
+
+    glDispatchCompute(work_group_count.x, work_group_count.y, 6);
+
+    this->volume_irradiance_shader.use_default();
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+
+    glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
+
+    glBindImageTexture(0, this->volume_red_distribution_buffers[0], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+    glBindImageTexture(1, this->volume_green_distribution_buffers[0], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+    glBindImageTexture(2, this->volume_blue_distribution_buffers[0], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, this->volume_irradiance_buffer);
+
+    this->volume_integrate_shader.use_shader();
+    this->volume_integrate_shader["scene_volume_cell"] = glm::uvec3(volume_cell);
+    this->volume_integrate_shader["scene_volume_transform[0]"] = volume_transform;
+
+    glDispatchCompute(1, 1, 1);
+
+    this->volume_integrate_shader.use_default();
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+}
+#endif
 
 void Scene::destroy_buffers()
 {
@@ -1919,6 +2279,7 @@ void Scene::destroy_buffers()
         light.light_depth_buffers.clear();
     }
 
+#if SCENE_ENABLE_INDIRECT
     glDeleteFramebuffers(1, &this->indirect_inject_vertex_array);
     glDeleteVertexArrays(1, &this->indirect_inject_vertex_array);
 
@@ -1928,6 +2289,22 @@ void Scene::destroy_buffers()
     glDeleteTextures(1, &this->indirect_green_distribution_buffers[2]);
     glDeleteTextures(1, &this->indirect_blue_distribution_buffers[2]);
     glDeleteTextures(1, &this->indirect_opacity_buffer);
+#endif
+
+#if SCENE_VOLUME_ENABLE
+    for (uint32_t index = 0; index < this->volume_capture_frame_buffers.size(); index++)
+    {
+        glDeleteFramebuffers(1, &this->volume_capture_frame_buffers[index]);
+    }
+
+    glDeleteTextures(1, &this->volume_capture_depth_buffer);
+    glDeleteTextures(1, &this->volume_capture_color_buffer);
+    glDeleteTextures(1, &this->volume_irradiance_buffer);
+
+    glDeleteTextures(1, &this->volume_red_distribution_buffers[1]);
+    glDeleteTextures(1, &this->volume_green_distribution_buffers[1]);
+    glDeleteTextures(1, &this->volume_blue_distribution_buffers[1]);
+#endif
 
     glDeleteBuffers(1, &this->light_buffer);
 }

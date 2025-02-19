@@ -7,6 +7,7 @@
 #include <array>
 #include <optional>
 #include <string>
+#include <span>
 
 #include <assimp/scene.h>
 #include <assimp/Importer.hpp>
@@ -14,8 +15,15 @@
 
 #include "shader.hpp"
 
+#define SCENE_INDIRECT_ENABLE            0
 #define SCENE_INDIRECT_MEMORY_LIMIT      1024 //MiB
 #define SCENE_INDIRECT_DEFAULT_CELL_SIZE 0.1f
+
+#define SCENE_VOLUME_ENABLE              1
+#define SCENE_VOLUME_MEMORY_LIMIT        1024 //MiB
+#define SCENE_VOLUME_DEFAULT_CELL_SIZE   1.0f
+#define SCENE_VOLUME_CAPTURE_SIZE        32
+
 #define SCENE_SKY_SPHERE_RINGS           16
 #define SCENE_SKY_SPHERE_SEGMENTS        32
 #define SCENE_LIGHT_NEAR_DISTANCE        0.01f
@@ -116,6 +124,9 @@ private:
     GLuint light_flux_buffer = 0;
     GLuint light_normal_buffer = 0;
 
+    Shader light_shader = { "Scene Light Shader" };
+
+#if SCENE_INDIRECT_ENABLE
     glm::uvec3 indirect_cell_count = glm::uvec3(0);
     glm::vec3 indirect_cell_size = glm::vec3(0.0f);
     glm::vec3 indirect_domain_min = glm::vec3(0.0f);
@@ -131,11 +142,32 @@ private:
     std::array<GLuint, 3> indirect_visibility_buffers;
     GLuint indirect_opacity_buffer = 0;
 
-    Shader light_shader = { "Scene Light Shader" };
     Shader indirect_inject_shader = { "Scene Indirect Inject Shader" };
     Shader indirect_visibility_shader = { "Scene Indirect Visibility Shader" };
     Shader indirect_opacity_shader = { "Scene Indirect Opacity Shader" };
     Shader indirect_propagate_shader = { "Scene Indirect Propagate Shader" };
+#endif
+
+#if SCENE_VOLUME_ENABLE
+    glm::uvec3 volume_cell_count = glm::uvec3(0);
+    glm::vec3 volume_cell_size = glm::vec3(0.0f);
+    glm::vec3 volume_domain_min = glm::vec3(0.0f);
+    glm::vec3 volume_domain_max = glm::vec3(0.0f);
+
+    GLuint volume_capture_depth_buffer = 0;
+    GLuint volume_capture_color_buffer = 0;
+    GLuint volume_irradiance_buffer = 0;
+
+    std::array<GLuint, 6> volume_capture_frame_buffers;
+
+    std::array<GLuint, 2> volume_red_distribution_buffers;
+    std::array<GLuint, 2> volume_green_distribution_buffers;
+    std::array<GLuint, 2> volume_blue_distribution_buffers;
+
+    Shader volume_capture_shader = { "Scene Volume Capture Shader" };
+    Shader volume_irradiance_shader = { "Scene Volume Irradiance Shader" };
+    Shader volume_integrate_shader = { "Scene Volume Integrate Shader" };
+#endif
 
     glm::vec3 scene_min = glm::vec3(0.0f);
     glm::vec3 scene_max = glm::vec3(0.0f);
@@ -148,7 +180,7 @@ private:
 public:
     Scene() = default;
 
-    bool create(const std::string& scene_file_name, float scale, float exposure, float indirect_intensity, std::optional<std::string> sky_file_name, float sky_intensity = 1.0f);
+    bool create(const std::string& scene_file_name, float scale, float exposure, float indirect_intensity, std::optional<std::string> sky_file_name, float sky_intensity = 1.0f, float sky_rotation = 0.0f);
     void destroy();
 
     void render(const Shader& shader) const;
@@ -160,7 +192,7 @@ private:
     bool create_materials(const aiScene* scene, const std::string& scene_file_name);
     bool create_objects(const aiScene* scene, float scale);
     bool create_light(const aiScene* scene, float scale);
-    bool create_sky(const std::string& sky_file_name, float sky_intensity);
+    bool create_sky(const std::string& sky_file_name, float sky_intensity, float sky_rotation);
     bool create_material_texture_from_material(const aiMaterial* scene_material, const std::string& scene_file_name, Texture*& texture, bool& use_roughness_factor, bool& use_metallic_factor);
     bool create_texture_from_material(const aiMaterial* scene_material, const std::string& scene_file_name, bool use_srgb, aiTextureType type, Texture*& texture);
     bool create_texture_from_sky_file(const std::string& file_name, Texture*& texture);
@@ -169,13 +201,23 @@ private:
     bool create_texture_from_compressed_file(const std::string& file_name, bool use_srgb, Texture*& texture);
     bool create_texture_from_color(const glm::vec4& color, GLenum format, Texture*& texture);
 
-    void compute_indirect_domain();
-
     bool create_shaders();
     bool create_buffers();
-    bool create_color_distribution_buffers(std::array<GLuint, 3>& distribution_buffers);
+    bool create_color_distribution_buffers(const glm::uvec3& cell_count, std::span<GLuint> distribution_buffers);
+    
     void compute_light(const Light& light, uint32_t array_index);
+    void compute_light();
+
+#if SCENE_INDIRECT_ENABLE
+    void compute_indirect_domain();
     void compute_indirect();
+#endif
+
+#if SCENE_VOLUME_ENABLE
+    void compute_volume_domain();
+    void compute_volume();
+    void compute_volume_cell(const glm::ivec3 volume_cell);
+#endif
 
     void destroy_buffers();
     void destroy_objects();

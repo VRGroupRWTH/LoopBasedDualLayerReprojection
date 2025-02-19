@@ -6,6 +6,7 @@
 #include <GL/glew.h>
 #include <vector>
 #include <array>
+#include <span>
 #include <string>
 #include <cstdint>
 
@@ -75,13 +76,14 @@ public:
     void operator=(float value) const;
     void operator=(double value) const;
 
-    void operator=(const std::vector<int32_t>& value) const;
-
     void operator=(const glm::vec2& value) const;
     void operator=(const glm::vec3& value) const;
     void operator=(const glm::uvec3& value) const;
     void operator=(const glm::vec4& value) const;
     void operator=(const glm::mat4& value) const;
+
+    void operator=(std::span<int32_t> value) const;
+    void operator=(std::span<glm::mat3> value) const;
 
     uint32_t get_location() const;
 };

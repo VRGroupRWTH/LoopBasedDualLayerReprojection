@@ -1,0 +1,55 @@
+#version 430
+#extension GL_NV_gpu_shader5 : require
+
+#include "shared_defines.glsl"
+#include "shared_math_library.glsl"
+
+layout(local_size_x = SCENE_VOLUME_IRRADIANCE_WORK_GROUP_SIZE_X, local_size_y = SCENE_VOLUME_IRRADIANCE_WORK_GROUP_SIZE_Y, local_size_z = SCENE_VOLUME_IRRADIANCE_WORK_GROUP_SIZE_Z) in;
+
+layout(binding = 0, rgba16f) uniform writeonly image2DArray scene_volume_irradiance;
+layout(binding = 0) uniform sampler2DArray scene_volume_capture;
+
+uniform mat3 scene_volume_transform[6];
+
+vec3 compute_direction(ivec3 coord, ivec3 resolution)
+{
+    vec2 texel = (vec2(coord.xy) + vec2(0.5)) / vec2(resolution);
+    vec3 direction = scene_volume_transform[coord.z] * vec3(texel * 2.0 - 1.0, -1.0);
+
+    return normalize(direction);
+}
+
+void main()
+{
+    ivec3 dst_coord = ivec3(gl_GlobalInvocationID);
+    ivec3 dst_resolution = ivec3(imageSize(scene_volume_irradiance));
+    ivec3 src_resolution = ivec3(textureSize(scene_volume_capture, 0));
+
+    if(is_outside(dst_coord.xy, dst_resolution.xy))
+    {
+        return;
+    }
+
+    vec3 normal = compute_direction(dst_coord, dst_resolution);
+    vec3 irradiance = vec3(0.0);
+
+    for(uint coord_z = 0; coord_z < src_resolution.z; coord_z++)
+    {
+        for(uint coord_y = 0; coord_y < src_resolution.y; coord_y++)
+        {
+            for(uint coord_x = 0; coord_x < src_resolution.x; coord_x++)
+            {
+                ivec3 src_coord = ivec3(coord_x, coord_y, coord_z);
+                vec3 direction = compute_direction(src_coord, src_resolution);
+
+                vec3 radiance = texelFetch(scene_volume_capture, src_coord, 0).xyz;
+                irradiance += radiance * max(0, dot(normal, direction));
+            }
+        }   
+    }
+
+    uint sample_count = src_resolution.x * src_resolution.y * src_resolution.z;
+    irradiance *= (4.0 * PI) / sample_count;
+
+    imageStore(scene_volume_irradiance, dst_coord, vec4(irradiance, 0.0));
+}

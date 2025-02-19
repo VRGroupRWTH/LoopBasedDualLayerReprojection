@@ -58,7 +58,7 @@ void main()
         }
     }
 
-    vec3 lighting = compute_lighting(camera_position, in_position, in_normal, in_tangent, in_texture_coord);
+    vec3 lighting = compute_lighting(camera_position, in_position, in_normal, in_tangent, in_texture_coord, true);
 
     out_normal = encode_normal(in_view_normal);
     out_color = vec4(lighting, 1.0);

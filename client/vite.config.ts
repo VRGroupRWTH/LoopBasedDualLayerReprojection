@@ -4,7 +4,7 @@ import basicSsl from '@vitejs/plugin-basic-ssl'
 import path from "path";
 import fs from "fs";
 
-const server_ip = "localhost";
+const server_ip = "134.130.70.61";
 const server_port = 9000;
 const client_port = 443;
 
@@ -55,8 +55,8 @@ export default defineConfig(
         },
         https:
         {
-            key: fs.readFileSync("/mnt/c/Users/tb397677/Desktop/Documents/certificates/private_key.pem"),
-            cert: fs.readFileSync("/mnt/c/Users/tb397677/Desktop/Documents/certificates/certificat.pem")
+            key: fs.readFileSync("/mnt/c/Users/tb397677/Desktop/Documents/research/papers/2024_vmv_loop_based_dual_layer_image_warping/certificates/private_key.pem"),
+            cert: fs.readFileSync("/mnt/c/Users/tb397677/Desktop/Documents/research/papers/2024_vmv_loop_based_dual_layer_image_warping/certificates/20241202-cert-streaming.vis.rwth-aachen.de-7A6E6D7E79F1C2C303D102C80F59A587.pem")
         }
     }
 });

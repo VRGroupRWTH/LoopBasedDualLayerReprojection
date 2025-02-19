@@ -254,7 +254,7 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
                                 <SettingNumber label="Scene Exposure" value={config.scene_exposure} set_value={value => set_config("scene_exposure", value)} min_value={0.0} max_value={2.0} type={SettingNumberType.Float} step={0.1}></SettingNumber>
                                 <SettingNumber label="Scene Indirect Intensity" value={config.scene_indirect_intensity} set_value={value => set_config("scene_indirect_intensity", value)} min_value={0.0} max_value={2.0} type={SettingNumberType.Float} step={0.1}></SettingNumber>
                                 <SettingFile label="Sky File" select_type="file" value={config.sky_file_name} set_value={value => set_config("sky_file_name", value)}></SettingFile>
-                                <SettingNumber label="Sky Intensity" value={config.sky_intensity} set_value={value => set_config("sky_intensity", value)} min_value={0.0} max_value={2.0} type={SettingNumberType.Float} step={0.1}></SettingNumber>
+                                <SettingNumber label="Sky Intensity" value={config.sky_intensity} set_value={value => set_config("sky_intensity", value)} min_value={0.0} max_value={10.0} type={SettingNumberType.Float} step={0.1}></SettingNumber>
                             </div>
                             <div>
                                 <h4 class="border-bottom my-4">Server Settings</h4>

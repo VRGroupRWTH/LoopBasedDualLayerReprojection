@@ -1,0 +1,65 @@
+#version 430
+#extension GL_NV_gpu_shader5 : require
+
+#include "shared_defines.glsl"
+#include "shared_math_library.glsl"
+#include "shared_indirect_library.glsl"
+
+layout(local_size_x = SCENE_VOLUME_INTEGRATE_WORK_GROUP_SIZE_X, local_size_y = SCENE_VOLUME_INTEGRATE_WORK_GROUP_SIZE_Y, local_size_z = SCENE_VOLUME_INTEGRATE_WORK_GROUP_SIZE_Z) in;
+
+layout(binding = 0, rgba16f) uniform writeonly image3D scene_volume_red_distribution;
+layout(binding = 1, rgba16f) uniform writeonly image3D scene_volume_green_distribution;
+layout(binding = 2, rgba16f) uniform writeonly image3D scene_volume_blue_distribution;
+
+layout(binding = 0) uniform sampler2DArray scene_volume_irradiance;
+
+uniform uvec3 scene_volume_cell;
+uniform mat3 scene_volume_transform[6];
+
+vec3 compute_direction(ivec3 coord, ivec3 resolution)
+{
+    vec2 texel = (vec2(coord.xy) + vec2(0.5)) / vec2(resolution);
+    vec3 direction = scene_volume_transform[coord.z] * vec3(texel * 2.0 - 1.0, -1.0);
+
+    return normalize(direction);
+}
+
+void main()
+{
+    ivec3 resolution = ivec3(textureSize(scene_volume_irradiance, 0));
+    vec4 red_distribution = vec4(0.0);
+    vec4 green_distribution = vec4(0.0);
+    vec4 blue_distribution = vec4(0.0);
+
+    for(uint coord_z = 0; coord_z < resolution.z; coord_z++)
+    {
+        for(uint coord_y = 0; coord_y < resolution.y; coord_y++)
+        {
+            for(uint coord_x = 0; coord_x < resolution.x; coord_x++)
+            {
+                ivec3 coord = ivec3(coord_x, coord_y, coord_z);
+                vec3 direction = compute_direction(coord, resolution);
+
+                vec4 weights = vec4(0.0);
+                weights.x = spherical_harmonic_evaluate(direction, vec4(1.0, 0.0, 0.0, 0.0));
+                weights.y = spherical_harmonic_evaluate(direction, vec4(0.0, 1.0, 0.0, 0.0));
+                weights.z = spherical_harmonic_evaluate(direction, vec4(0.0, 0.0, 1.0, 0.0));
+                weights.w = spherical_harmonic_evaluate(direction, vec4(0.0, 0.0, 0.0, 1.0));
+                
+                vec3 irradiance = texelFetch(scene_volume_irradiance, coord, 0).xyz;
+                red_distribution += weights * irradiance.x;
+                green_distribution += weights * irradiance.y;
+                blue_distribution += weights * irradiance.z;
+            }
+        }   
+    }
+
+    uint sample_count = resolution.x * resolution.y * resolution.z;
+    red_distribution *= (4.0 * PI) / sample_count;
+    green_distribution *= (4.0 * PI) / sample_count;
+    blue_distribution *= (4.0 * PI) / sample_count;
+
+    imageStore(scene_volume_red_distribution, ivec3(scene_volume_cell), red_distribution);
+    imageStore(scene_volume_green_distribution, ivec3(scene_volume_cell), green_distribution);
+    imageStore(scene_volume_blue_distribution, ivec3(scene_volume_cell), blue_distribution);
+}

@@ -36,7 +36,7 @@ uniform vec3 camera_position;
 
 void main()
 {
-    vec3 lighting = compute_lighting(camera_position, in_position, in_normal, in_tangent, in_texture_coord);
+    vec3 lighting = compute_lighting(camera_position, in_position, in_normal, in_tangent, in_texture_coord, true);
 
 #if APPLICATION_PREVIEW_LIGHTING
     out_color = vec4(lighting, scene_object_id); //Put the object_id in the alpha channel so that the uniform is not optimzed out

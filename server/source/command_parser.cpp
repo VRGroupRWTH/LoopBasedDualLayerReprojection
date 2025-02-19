@@ -91,6 +91,11 @@ bool CommandParser::parse(uint32_t argument_count, const char** argument_list)
             this->sky_intensity = std::atof(parameter.value.c_str());
         }
 
+        else if (parameter.name == "sky_rotation")
+        {
+            this->sky_rotation = std::atof(parameter.value.c_str());
+        }
+
         else if (parameter.name == "scene_directory")
         {
             this->scene_directory = parameter.value;
@@ -150,4 +155,9 @@ std::optional<std::string> CommandParser::get_sky_file_name() const
 float CommandParser::get_sky_intensity() const
 {
     return this->sky_intensity;
+}
+
+float CommandParser::get_sky_rotation() const
+{
+    return this->sky_rotation;
 }

@@ -375,30 +375,6 @@ void ShaderUniform::operator=(double value) const
     glUniform1d(this->entry->location, value);
 }
 
-void ShaderUniform::operator=(const std::vector<int32_t>& value) const
-{
-    if (this->entry == nullptr)
-    {
-        return;
-    }
-
-    if (this->entry->type != GL_INT && !is_uniform_sampler(this->entry->type))
-    {
-        spdlog::warn("Shader: Wrong uniform type attached to uniform '{}' of shader '{}'!", this->entry->name, this->shader->get_shader_name());
-
-        return;
-    }
-
-    if (value.size() > this->entry->array_size)
-    {
-        spdlog::warn("Shader: Wrong uniform array size attached to uniform '{}' of shader '{}'!", this->entry->name, this->shader->get_shader_name());
-
-        return;
-    }
-
-    glUniform1iv(this->entry->location, value.size(), value.data());
-}
-
 void ShaderUniform::operator=(const glm::vec2& value) const
 {
     if (this->entry == nullptr)
@@ -482,6 +458,54 @@ void ShaderUniform::operator=(const glm::mat4& value) const
     }
 
     glUniformMatrix4fv(this->entry->location, 1, GL_FALSE, glm::value_ptr(value));
+}
+
+void ShaderUniform::operator=(std::span<int32_t> value) const
+{
+    if (this->entry == nullptr)
+    {
+        return;
+    }
+
+    if (this->entry->type != GL_INT && !is_uniform_sampler(this->entry->type))
+    {
+        spdlog::warn("Shader: Wrong uniform type attached to uniform '{}' of shader '{}'!", this->entry->name, this->shader->get_shader_name());
+
+        return;
+    }
+
+    if (value.size() != this->entry->array_size)
+    {
+        spdlog::warn("Shader: Wrong uniform array size attached to uniform '{}' of shader '{}'!", this->entry->name, this->shader->get_shader_name());
+
+        return;
+    }
+
+    glUniform1iv(this->entry->location, value.size(), value.data());
+}
+
+void ShaderUniform::operator=(std::span<glm::mat3> value) const
+{
+    if (this->entry == nullptr)
+    {
+        return;
+    }
+
+    if (this->entry->type != GL_FLOAT_MAT3)
+    {
+        spdlog::warn("Shader: Wrong uniform type attached to uniform '{}' of shader '{}'!", this->entry->name, this->shader->get_shader_name());
+
+        return;
+    }
+
+    if (value.size() != this->entry->array_size)
+    {
+        spdlog::warn("Shader: Wrong uniform array size attached to uniform '{}' of shader '{}'!", this->entry->name, this->shader->get_shader_name());
+
+        return;
+    }
+
+    glUniformMatrix3fv(this->entry->location, value.size(), GL_FALSE, glm::value_ptr(value.front()));
 }
 
 uint32_t ShaderUniform::get_location(void) const

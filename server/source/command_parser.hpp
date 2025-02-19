@@ -18,6 +18,7 @@ private:
 
     std::optional<std::string> sky_file_name;
     float sky_intensity = 1.0f;
+    float sky_rotation = 0.0f;
 
 public:
     CommandParser() = default;
@@ -34,6 +35,7 @@ public:
 
     std::optional<std::string> get_sky_file_name() const;
     float get_sky_intensity() const;
+    float get_sky_rotation() const;
 };
 
 #endif
