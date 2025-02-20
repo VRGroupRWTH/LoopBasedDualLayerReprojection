@@ -635,6 +635,14 @@ class ARDisplay
 
         const view = pose.views[0];
         mat4.copy(this.projection_matrix, view.projectionMatrix);
+
+        if(AR_DISPLAY_WEBXR_VIEWER_FIXES)
+        {
+            //For some reason the WebXR Viewer does not apply the correct near and far distances set with session.updateRenderState(...).
+            //To fix this bug, manually compute the correct entires of the projection matrix an overwrite the values of WebXR Viewer.
+            this.projection_matrix[10] = -(AR_DISPLAY_FAR_DISTANCE + AR_DISPLAY_NEAR_DISTANCE) / (AR_DISPLAY_FAR_DISTANCE - AR_DISPLAY_NEAR_DISTANCE)
+            this.projection_matrix[14] = -2.0 * (AR_DISPLAY_FAR_DISTANCE * AR_DISPLAY_NEAR_DISTANCE) / (AR_DISPLAY_FAR_DISTANCE - AR_DISPLAY_NEAR_DISTANCE)
+        }
     }
 
     private compute_view_matrix(frame: XRFrame)

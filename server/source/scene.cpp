@@ -891,6 +891,7 @@ bool Scene::create_material_texture_from_material(const aiMaterial* scene_materi
         combined_texture->file_name = file_name;
         combined_texture->image_width = image_resolution.x;
         combined_texture->image_height = image_resolution.y;
+        this->textures.push_back(combined_texture);
 
         glm::ivec2 image_level_resolution = image_resolution;
         uint32_t image_levels = 1;
@@ -1882,7 +1883,7 @@ void Scene::compute_indirect_domain()
         this->indirect_cell_size = glm::vec3(std::cbrt(factor_scene / factor_limit));
         this->indirect_cell_count = glm::uvec3(glm::max(glm::ceil(scene_size / this->indirect_cell_size), glm::vec3(1.0f)));
 
-        spdlog::warn("Indirect memory limit reached!");
+        spdlog::warn("Scene: Indirect memory limit reached!");
     }
 
     this->indirect_domain_min = scene_center - 0.5f * this->indirect_cell_size * glm::vec3(this->indirect_cell_count);
@@ -2095,8 +2096,6 @@ void Scene::compute_indirect()
     }
 
     glDeleteTextures(3, this->indirect_visibility_buffers.data());
-    glDeleteTextures(1, &this->light_normal_buffer);
-    glDeleteTextures(1, &this->light_flux_buffer);
 
     this->indirect_visibility_buffers.fill(0);
     this->light_normal_buffer = 0;
@@ -2124,7 +2123,7 @@ void Scene::compute_volume_domain()
         this->volume_cell_size = glm::vec3(std::cbrt(factor_scene / factor_limit));
         this->volume_cell_count = glm::uvec3(glm::max(glm::ceil(scene_size / this->volume_cell_size), glm::vec3(1.0f)));
 
-        spdlog::warn("Volume memory limit reached!");
+        spdlog::warn("Scene: Volume memory limit reached!");
     }
 
     this->volume_domain_min = scene_center - 0.5f * this->volume_cell_size * glm::vec3(this->volume_cell_count);
@@ -2153,7 +2152,7 @@ void Scene::compute_volume()
 
         glFinish();
 
-        spdlog::info("Volume Slice " + std::to_string(cell_z) + " of " + std::to_string(this->volume_cell_count.z));
+        spdlog::info("Scene: Volume Slice " + std::to_string(cell_z) + " of " + std::to_string(this->volume_cell_count.z));
     }
 
     glMemoryBarrier(GL_TEXTURE_UPDATE_BARRIER_BIT);
@@ -2279,12 +2278,16 @@ void Scene::destroy_buffers()
         light.light_depth_buffers.clear();
     }
 
+    glDeleteTextures(1, &this->light_depth_cube_array_buffer);
+    glDeleteTextures(1, &this->light_depth_array_buffer);
+    glDeleteTextures(1, &this->light_flux_buffer);
+    glDeleteTextures(1, &this->light_normal_buffer);
+    glDeleteBuffers(1, &this->light_buffer);
+
 #if SCENE_ENABLE_INDIRECT
     glDeleteFramebuffers(1, &this->indirect_inject_vertex_array);
     glDeleteVertexArrays(1, &this->indirect_inject_vertex_array);
 
-    glDeleteTextures(1, &this->light_depth_cube_array_buffer);
-    glDeleteTextures(1, &this->light_depth_array_buffer);
     glDeleteTextures(1, &this->indirect_red_distribution_buffers[2]);
     glDeleteTextures(1, &this->indirect_green_distribution_buffers[2]);
     glDeleteTextures(1, &this->indirect_blue_distribution_buffers[2]);
@@ -2305,8 +2308,6 @@ void Scene::destroy_buffers()
     glDeleteTextures(1, &this->volume_green_distribution_buffers[1]);
     glDeleteTextures(1, &this->volume_blue_distribution_buffers[1]);
 #endif
-
-    glDeleteBuffers(1, &this->light_buffer);
 }
 
 void Scene::destroy_objects()
