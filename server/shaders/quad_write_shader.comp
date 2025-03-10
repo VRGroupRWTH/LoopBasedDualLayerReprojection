@@ -1,0 +1,59 @@
+#version 430
+#extension GL_NV_gpu_shader5 : require
+
+#include "shared_defines.glsl"
+
+layout(local_size_x = QUAD_GENERATOR_WRITE_WORK_GROUP_SIZE_X, local_size_y = 1, local_size_z = 1) in;
+
+layout(binding = 0) uniform usampler2D corner_buffer;
+
+layout(binding = 0, std430) readonly buffer QuadIndirectBuffer
+{
+    QuadIndirect quad_indirect;
+};
+
+layout(binding = 1, std430) readonly buffer QuadBuffer
+{
+    Quad quad_list[];
+};
+
+layout(binding = 2, std430) buffer CountBuffer
+{
+    QuadCount count;
+};
+
+layout(binding = 3, std430) buffer IndexBuffer
+{
+    uint index_list[];
+};
+
+uint corner_index(ivec2 coord)
+{
+    ivec2 corner_resolution = ivec2(textureSize(corner_buffer, 0));
+    ivec2 corner_coord = clamp(coord, ivec2(0), corner_resolution - ivec2(1));
+    
+    return texelFetch(corner_buffer, corner_coord, 0).x;
+} 
+
+void main()
+{
+    uint quad_index = gl_GlobalInvocationID.x;
+
+    if(quad_index >= quad_indirect.quad_count)
+    {
+        return;
+    }
+
+    uint quad_level = quad_list[quad_index].level;
+    int quad_size = (1 << quad_level);
+    ivec2 quad_coord = quad_size * ivec2(quad_list[quad_index].coord);
+    
+    uint offset = atomicAdd(count.index_count, 6);
+    index_list[offset + 0] = corner_index(quad_coord);
+    index_list[offset + 1] = corner_index(quad_coord + ivec2(quad_size, 0));
+    index_list[offset + 2] = corner_index(quad_coord + ivec2(quad_size, quad_size));
+
+    index_list[offset + 3] = corner_index(quad_coord + ivec2(quad_size, quad_size));
+    index_list[offset + 4] = corner_index(quad_coord + ivec2(0, quad_size));
+    index_list[offset + 5] = corner_index(quad_coord);
+}

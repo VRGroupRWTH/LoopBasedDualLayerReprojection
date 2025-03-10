@@ -1,0 +1,63 @@
+#version 430
+#extension GL_NV_gpu_shader5 : require
+
+#include "shared_defines.glsl"
+#include "shared_math_library.glsl"
+
+layout(local_size_x = QUAD_GENERATOR_CORNER_WORK_GROUP_SIZE_X, local_size_y = QUAD_GENERATOR_CORNER_WORK_GROUP_SIZE_Y, local_size_z = 1) in;
+
+layout(binding = 0, r32ui) uniform uimage2D corner_buffer;
+layout(binding = 0) uniform sampler2D depth_buffer;
+
+layout(binding = 0, std430) buffer CountBuffer
+{
+    QuadCount count;
+};
+
+layout(binding = 1, std430) buffer VertexBuffer
+{
+    QuadVertex vertex_list[];
+};
+
+void main()
+{
+    ivec2 corner_coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 corner_resolution = ivec2(imageSize(corner_buffer).xy);
+
+    if(is_outside(corner_coord, corner_resolution))
+    {
+        return;
+    }
+
+    uint corner_flag = imageLoad(corner_buffer, corner_coord).x;
+
+    if(corner_flag != QUAD_GENERATOR_CORNER_ALLOCATE_FLAG)
+    {
+        return;
+    }
+
+    uint index = atomicAdd(count.vertex_count, 1);
+    imageStore(corner_buffer, corner_coord, uvec4(index));
+
+    ivec2 depth_resolution = ivec2(textureSize(depth_buffer, 0).xy);
+    float depth_min = 1.0;
+
+    for(uint offset_y = 0; offset_y < 2; offset_y++)
+    {
+        for(uint offset_x = 0; offset_x < 2; offset_x++)
+        {
+            ivec2 depth_coord = (corner_coord - ivec2(1)) + ivec2(offset_x, offset_y);
+
+            if(is_outside(depth_coord, depth_resolution))
+            {
+                continue;
+            }
+
+            float depth = texelFetch(depth_buffer, depth_coord, 0).x;
+            depth_min = min(depth_min, depth);
+        }
+    }
+
+    vertex_list[index].coord = u16vec2(corner_coord);
+    vertex_list[index].depth = depth_min;
+}

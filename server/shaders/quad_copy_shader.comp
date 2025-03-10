@@ -1,0 +1,28 @@
+#version 430
+#extension GL_NV_gpu_shader5 : require
+
+#include "shared_defines.glsl"
+#include "shared_math_library.glsl"
+
+layout(local_size_x = QUAD_GENERATOR_COPY_WORK_GROUP_SIZE_X, local_size_y = QUAD_GENERATOR_COPY_WORK_GROUP_SIZE_Y, local_size_z = 1) in;
+
+layout(binding = 0, rg32f) uniform writeonly image2D delta_buffer;
+layout(binding = 0) uniform sampler2D depth_buffer;
+
+uniform float depth_max;
+
+void main()
+{
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 resolution = ivec2(imageSize(delta_buffer).xy);
+
+    if(is_outside(coord, resolution))
+    {
+        return;
+    }
+
+    float depth = texelFetch(depth_buffer, coord, 0).x;
+    depth = min(depth, depth_max);
+
+    imageStore(delta_buffer, coord, vec4(depth, depth, 0.0, 0.0));
+}

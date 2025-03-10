@@ -1,0 +1,37 @@
+#version 430
+#extension GL_NV_gpu_shader5 : require
+
+#include "shared_defines.glsl"
+#include "shared_math_library.glsl"
+
+layout(local_size_x = QUAD_GENERATOR_DELTA_WORK_GROUP_SIZE_X, local_size_y = QUAD_GENERATOR_DELTA_WORK_GROUP_SIZE_Y, local_size_z = 1) in;
+
+layout(binding = 0, rg32f) uniform readonly image2D src_buffer;
+layout(binding = 1, rg32f) uniform writeonly image2D dst_buffer;
+
+void main()
+{
+    ivec2 dst_coord = ivec2(gl_GlobalInvocationID);
+    ivec2 dst_resolution = ivec2(imageSize(dst_buffer));
+
+    if(is_outside(dst_coord, dst_resolution))
+    {
+        return;
+    }
+
+    vec2 dst_delta = vec2(1.0, 0.0);
+
+    for(uint offset_y = 0; offset_y < 2; offset_y++)
+    {
+        for(uint offset_x = 0; offset_x < 2; offset_x++)
+        {
+            ivec2 src_coord = 2 * dst_coord + ivec2(offset_x, offset_y);
+            vec2 src_delta = imageLoad(src_buffer, src_coord).xy;
+
+            dst_delta.x = min(dst_delta.x, src_delta.x);
+            dst_delta.y = max(dst_delta.y, src_delta.y);
+        }
+    }
+
+    imageStore(dst_buffer, dst_coord, vec4(dst_delta, 0.0, 0.0));
+}
