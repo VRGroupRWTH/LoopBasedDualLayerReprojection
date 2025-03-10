@@ -36,6 +36,21 @@
 #define LINE_GENERATOR_QUAD_TREE_WORK_GROUP_SIZE_X 32
 #define LINE_GENERATOR_QUAD_TREE_WORK_GROUP_SIZE_Y 24
 
+#define QUAD_GENERATOR_MAX_QUAD_COUNT   2000000 //Increase value if not enough
+#define QUAD_GENERATOR_MAX_VERTEX_COUNT 2000000 //Increase value if not enough
+#define QUAD_GENERATOR_MAX_INDEX_COUNT  8000000 //Increase value if not enough
+
+#define QUAD_GENERATOR_CORNER_ALLOCATE_FLAG 0xFFFFFFFF
+
+#define QUAD_GENERATOR_COPY_WORK_GROUP_SIZE_X 32
+#define QUAD_GENERATOR_COPY_WORK_GROUP_SIZE_Y 24
+#define QUAD_GENERATOR_DELTA_WORK_GROUP_SIZE_X 32
+#define QUAD_GENERATOR_DELTA_WORK_GROUP_SIZE_Y 24
+#define QUAD_GENERATOR_REFINE_WORK_GROUP_SIZE_X 768
+#define QUAD_GENERATOR_CORNER_WORK_GROUP_SIZE_X 32
+#define QUAD_GENERATOR_CORNER_WORK_GROUP_SIZE_Y 24
+#define QUAD_GENERATOR_WRITE_WORK_GROUP_SIZE_X 768
+
 #define SCENE_MATERIAL_BASE_COLOR_TEXTURE_BINDING_POINT        32
 #define SCENE_MATERIAL_MATERIAL_TEXTURE_BINDING_POINT          33
 #define SCENE_MATERIAL_NORMAL_TEXTURE_BINDING_POINT            34
@@ -122,6 +137,32 @@ struct LoopSegment
 {
     u16vec2 end_coord;
     float end_coord_depth;
+};
+
+struct QuadCount
+{
+    uint vertex_count;
+    uint index_count;
+};
+
+struct Quad
+{
+    u16vec2 coord;
+    uint level;
+};
+
+struct QuadVertex
+{
+    u16vec2 coord;
+    float depth;
+};
+
+struct QuadIndirect
+{
+    uint group_count_x;
+    uint group_count_y;
+    uint group_count_z;
+    uint quad_count;
 };
 
 #endif

@@ -10,6 +10,7 @@ struct MeshSettings
 {
     float depth_max;
 
+    std::optional<shared::QuadSettings> quad;
     std::optional<shared::LineSettings> line;
     std::optional<shared::LoopSettings> loop;
 };
@@ -20,6 +21,7 @@ struct ViewMetadata
     float time_image_encode;
     float time_geometry_encode;
 
+    std::optional<shared::QuadViewMetadata> quad;
     std::optional<shared::LineViewMetadata> line;
     std::optional<shared::LoopViewMetadata> loop;
 };
@@ -124,6 +126,7 @@ MeshSettingsForm default_mesh_settings()
     MeshSettingsForm form;
     form.layer = shared::LayerSettings();
     form.mesh.depth_max = shared::MeshSettings().depth_max;
+    form.mesh.quad = shared::QuadSettings();
     form.mesh.line = shared::LineSettings();
     form.mesh.loop = shared::LoopSettings();
 
@@ -196,9 +199,19 @@ emscripten::val build_mesh_settings_packet(MeshSettingsForm form)
     packet.layer = form.layer;
     packet.mesh.depth_max = form.mesh.depth_max;
 
-    if(form.mesh.line.has_value() && form.mesh.loop.has_value())
+    uint32_t settings = 0;
+    settings += form.mesh.quad.has_value() ? 1 : 0;
+    settings += form.mesh.line.has_value() ? 1 : 0;
+    settings += form.mesh.loop.has_value() ? 1 : 0;
+
+    if(settings > 1)
     {
         assert(true);
+    }
+
+    if (form.mesh.quad.has_value())
+    {
+        packet.mesh.quad = form.mesh.quad.value();
     }
 
     if (form.mesh.line.has_value())
@@ -258,6 +271,7 @@ LayerResponseForm parse_layer_response_packet(emscripten::val data)
         form_metadata.time_layer = packet_metadata.time_layer;
         form_metadata.time_image_encode = packet_metadata.time_image_encode;
         form_metadata.time_geometry_encode = packet_metadata.time_geometry_encode;
+        form_metadata.quad = packet_metadata.quad; // Don't know which one is correct so use both
         form_metadata.line = packet_metadata.line; // Don't know which one is correct so use both
         form_metadata.loop = packet_metadata.loop; // Don't know which one is correct so use both
     }
@@ -336,6 +350,7 @@ EMSCRIPTEN_BINDINGS(wrapper)
         .value("PACKET_TYPE_LAYER_RESPONSE", shared::PACKET_TYPE_LAYER_RESPONSE);
 
     emscripten::enum_<shared::MeshGeneratorType>("MeshGeneratorType")
+        .value("MESH_GENERATOR_TYPE_QUAD", shared::MESH_GENERATOR_TYPE_QUAD)
         .value("MESH_GENERATOR_TYPE_LINE", shared::MESH_GENERATOR_TYPE_LINE)
         .value("MESH_GENERATOR_TYPE_LOOP", shared::MESH_GENERATOR_TYPE_LOOP);
         
@@ -370,6 +385,9 @@ EMSCRIPTEN_BINDINGS(wrapper)
         .field("depth_slope_threshold", &shared::LayerSettings::depth_slope_threshold)
         .field("use_object_ids", &shared::LayerSettings::use_object_ids);
 
+    emscripten::value_object<shared::QuadSettings>("QuadSettings")
+        .field("depth_threshold", &shared::QuadSettings::depth_threshold);
+
     emscripten::value_object<shared::LineSettings>("LineSettings")
         .field("laplace_threshold", &shared::LineSettings::laplace_threshold)
         .field("normal_scale", &shared::LineSettings::normal_scale)
@@ -384,13 +402,22 @@ EMSCRIPTEN_BINDINGS(wrapper)
         .field("use_normals", &shared::LoopSettings::use_normals)
         .field("use_object_ids", &shared::LoopSettings::use_object_ids);
 
+    emscripten::register_optional<shared::QuadSettings>();
     emscripten::register_optional<shared::LineSettings>();
     emscripten::register_optional<shared::LoopSettings>();
 
     emscripten::value_object<MeshSettings>("MeshSettings")
         .field("depth_max", &MeshSettings::depth_max)
+        .field("quad", &MeshSettings::quad)
         .field("line", &MeshSettings::line)
         .field("loop", &MeshSettings::loop);
+
+    emscripten::value_object<shared::QuadViewMetadata>("QuadViewMetadata")
+        .field("time_copy", &shared::QuadViewMetadata::time_copy)
+        .field("time_delta", &shared::QuadViewMetadata::time_delta)
+        .field("time_refine", &shared::QuadViewMetadata::time_refine)
+        .field("time_corner", &shared::QuadViewMetadata::time_corner)
+        .field("time_write", &shared::QuadViewMetadata::time_write);
 
     emscripten::value_object<shared::LineViewMetadata>("LineViewMetadata")
         .field("time_edge_detection", &shared::LineViewMetadata::time_edge_detection)
@@ -425,6 +452,7 @@ EMSCRIPTEN_BINDINGS(wrapper)
         .field("segment_count", &shared::LoopViewMetadata::segment_count)
         .field("point_count", &shared::LoopViewMetadata::point_count);
 
+    emscripten::register_optional<shared::QuadViewMetadata>();
     emscripten::register_optional<shared::LineViewMetadata>();
     emscripten::register_optional<shared::LoopViewMetadata>();
 
@@ -432,6 +460,7 @@ EMSCRIPTEN_BINDINGS(wrapper)
         .field("time_layer", &ViewMetadata::time_layer)
         .field("time_image_encode", &ViewMetadata::time_image_encode)
         .field("time_geometry_encode", &ViewMetadata::time_geometry_encode)
+        .field("quad", &ViewMetadata::quad)
         .field("line", &ViewMetadata::line)
         .field("loop", &ViewMetadata::loop);
 

@@ -4,7 +4,7 @@ import { render } from "solid-js/web";
 import { Button } from "solid-bootstrap";
 import { Route, Router } from "@solidjs/router";
 import { glMatrix } from "gl-matrix";
-import RemoteRendering, { WrapperModule, SessionConfig, DisplayType, SessionMode, load_wrapper_module, MeshGeneratorType, VideoCodecMode, LoopSettings, LineSettings } from "./remote_rendering";
+import RemoteRendering, { WrapperModule, SessionConfig, DisplayType, SessionMode, load_wrapper_module, MeshGeneratorType, VideoCodecMode, QuadSettings, LoopSettings, LineSettings } from "./remote_rendering";
 import { SettingDropdown, SettingFile, SettingNumber, SettingNumberType, SettingScene } from "./components/setting";
 import { create_local_store } from "./components/local_storage";
 
@@ -28,8 +28,9 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
         layer_depth_base_threshold: default_mesh_config.layer.depth_base_threshold,
         layer_depth_slope_threshold: default_mesh_config.layer.depth_slope_threshold,
         layer_use_object_ids: default_mesh_config.layer.use_object_ids ? "Enabled" : "Disabled",
-        mesh_generator: "Loop-Based",
+        mesh_generator: "Quad-Based",
         mesh_depth_max: default_mesh_config.mesh.depth_max,
+        quad_depth_threshold: default_mesh_config.mesh.quad?.depth_threshold ?? 0.0,
         line_laplace_threshold: default_mesh_config.mesh.line?.laplace_threshold ?? 0.0,
         line_normal_scale: default_mesh_config.mesh.line?.normal_scale ?? 0.0,
         line_line_length_min: default_mesh_config.mesh.line?.line_length_min ?? 0.0,
@@ -128,10 +129,14 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
             break;
         }
 
-        let mesh_generator : MeshGeneratorType = props.wrapper.MeshGeneratorType.MESH_GENERATOR_TYPE_LOOP;
+        let mesh_generator : MeshGeneratorType = props.wrapper.MeshGeneratorType.MESH_GENERATOR_TYPE_QUAD;
 
         switch(config.mesh_generator)
         {
+        case "Quad-Based":
+            mesh_generator = props.wrapper.MeshGeneratorType.MESH_GENERATOR_TYPE_QUAD;
+            layer_count = 1; //The quad based method only works with one layer
+            break;
         case "Line-Based":
             mesh_generator = props.wrapper.MeshGeneratorType.MESH_GENERATOR_TYPE_LINE;
             layer_count = 1; //The line based method only works with one layer
@@ -158,10 +163,19 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
         }
 
         //Only add the parameters to the config if the method is used
+        let quad_config : QuadSettings | undefined = undefined;
         let line_config : LineSettings | undefined = undefined;
         let loop_config : LoopSettings | undefined = undefined;
 
-        if(mesh_generator == props.wrapper.MeshGeneratorType.MESH_GENERATOR_TYPE_LINE)
+        if(mesh_generator == props.wrapper.MeshGeneratorType.MESH_GENERATOR_TYPE_QUAD)
+        {
+            quad_config =
+            {
+                depth_threshold: config.quad_depth_threshold
+            }
+        }
+
+        else if(mesh_generator == props.wrapper.MeshGeneratorType.MESH_GENERATOR_TYPE_LINE)
         {
             line_config =
             {
@@ -205,6 +219,7 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
                 mesh:
                 {
                     depth_max: config.mesh_depth_max,
+                    quad: quad_config,
                     line: line_config,
                     loop: loop_config
                 }
@@ -273,10 +288,14 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
                             <div>
                                 <h4 class="border-bottom my-4">Mesh Settings</h4>
                                 <SettingDropdown label="Method" value={config.mesh_generator} set_value={value => set_config("mesh_generator", value)}>
+                                    <option>Quad-Based</option>
                                     <option>Line-Based</option>
                                     <option>Loop-Based</option>
                                 </SettingDropdown>
                                 <SettingNumber label="Depth Max" value={config.mesh_depth_max} set_value={value => set_config("mesh_depth_max", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
+                                <Show when={config.mesh_generator == "Quad-Based"}>
+                                    <SettingNumber label="Depth Threshold" value={config.quad_depth_threshold} set_value={value => set_config("quad_depth_threshold", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
+                                </Show>
                                 <Show when={config.mesh_generator == "Line-Based"}>
                                     <SettingNumber label="Laplace Threshold" value={config.line_laplace_threshold} set_value={value => set_config("line_laplace_threshold", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.001}></SettingNumber>
                                     <SettingNumber label="Normal Scale" value={config.line_normal_scale} set_value={value => set_config("line_normal_scale", value)} min_value={0.0} max_value={1.0} type={SettingNumberType.Float} step={0.0001}></SettingNumber>

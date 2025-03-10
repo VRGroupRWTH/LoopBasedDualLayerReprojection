@@ -426,7 +426,12 @@ export class Session
         {
             if(key == "mesh_generator")
             {
-                if(value == this.wrapper.MeshGeneratorType.MESH_GENERATOR_TYPE_LINE)
+                if(value == this.wrapper.MeshGeneratorType.MESH_GENERATOR_TYPE_QUAD)
+                {
+                    return "quad";   
+                }
+
+                else if(value == this.wrapper.MeshGeneratorType.MESH_GENERATOR_TYPE_LINE)
                 {
                     return "line";   
                 }

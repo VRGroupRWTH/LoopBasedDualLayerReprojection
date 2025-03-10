@@ -12,8 +12,9 @@ namespace shared
 {
     enum MeshGeneratorType : uint32_t
     {
-        MESH_GENERATOR_TYPE_LINE = 0x00,
-        MESH_GENERATOR_TYPE_LOOP = 0x01
+        MESH_GENERATOR_TYPE_QUAD = 0x00,
+        MESH_GENERATOR_TYPE_LINE = 0x01,
+        MESH_GENERATOR_TYPE_LOOP = 0x02
     };
 
     enum VideoCodecType : uint32_t
@@ -55,6 +56,11 @@ namespace shared
         std::uint8_t use_object_ids = true;
     };
 
+    struct QuadSettings
+    {
+        float depth_threshold = 0.001f;
+    };
+
     struct LineSettings
     {
         float laplace_threshold = 0.003f;
@@ -80,15 +86,19 @@ namespace shared
 
         union
         {
+            QuadSettings quad;
             LineSettings line;
             LoopSettings loop;
         };
 
     public:
-        MeshSettings(MeshGeneratorType type = MESH_GENERATOR_TYPE_LINE)
+        MeshSettings(MeshGeneratorType type = MESH_GENERATOR_TYPE_QUAD)
         {
             switch (type)
             {
+            case MESH_GENERATOR_TYPE_QUAD:
+                this->quad = QuadSettings();
+                break;
             case MESH_GENERATOR_TYPE_LINE:
                 this->line = LineSettings();
                 break;
@@ -99,6 +109,15 @@ namespace shared
                 break;
             }
         }
+    };
+
+    struct QuadViewMetadata // All time measurements in milliseconds
+    {
+        float time_copy = 0.0f;
+        float time_delta = 0.0f;
+        float time_refine = 0.0f;
+        float time_corner = 0.0f;
+        float time_write = 0.0f;
     };
 
     struct LineViewMetadata // All time measurements in milliseconds
@@ -153,6 +172,7 @@ namespace shared
 
         union
         {
+            QuadViewMetadata quad;
             LineViewMetadata line;
             LoopViewMetadata loop;
         };

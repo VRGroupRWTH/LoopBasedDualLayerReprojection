@@ -296,6 +296,9 @@ bool Application::process_session()
 
             switch (session_create.mesh_generator)
             {
+            case shared::MESH_GENERATOR_TYPE_QUAD:
+                mesh_generator_type = MESH_GENERATOR_TYPE_QUAD_BASED;
+                break;
             case shared::MESH_GENERATOR_TYPE_LINE:
                 mesh_generator_type = MESH_GENERATOR_TYPE_LINE_BASED;
                 break;
