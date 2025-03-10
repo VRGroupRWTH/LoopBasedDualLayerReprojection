@@ -9,15 +9,18 @@ import { LayerResponseForm, Matrix, MatrixArray, MeshGeneratorType, MeshSettings
 import { log_error, log_info } from "./log";
 import { mat4, vec2, vec3 } from "gl-matrix";
 import { Metadata } from "./metadata";
+import { RenderTime } from "./render_time";
 
 const SESSION_FRAME_QUEUE_MAX_LENGTH = 8;
+const SESSION_RENDER_TIME_SAMPLE_COUNT = 100;
 
 export enum SessionMode
 {
     Capture,
     Benchmark,
     ReplayMethod,
-    ReplayGroundTruth
+    ReplayGroundTruth,
+    RenderTime
 }
 
 export interface SessionConfig
@@ -72,6 +75,7 @@ export class Session
     private animation_output : Animation = new Animation();
 
     private layer_metadata : Metadata[] = [];
+    private render_time : RenderTime | null = null;
 
     private frame_pool : Frame[] = [];
     private frame_queue : Frame[] = [];
@@ -103,7 +107,7 @@ export class Session
             return false;   
         }
 
-        if(this.config.mode == SessionMode.Benchmark || this.config.mode == SessionMode.ReplayMethod || this.config.mode == SessionMode.ReplayGroundTruth)
+        if(this.config.mode == SessionMode.Benchmark || this.config.mode == SessionMode.ReplayMethod || this.config.mode == SessionMode.ReplayGroundTruth || this.config.mode == SessionMode.RenderTime)
         {
             if(!await this.animation_input.load(this.config.animation_file_name))
             {
@@ -117,6 +121,11 @@ export class Session
             {
                 this.layer_metadata.push(new Metadata());
             }
+        }
+
+        if(this.config.mode == SessionMode.RenderTime)
+        {
+            this.render_time = new RenderTime(this.gl, SESSION_RENDER_TIME_SAMPLE_COUNT);
         }
 
         if(!this.create_decoders())
@@ -340,6 +349,11 @@ export class Session
             }
         }
 
+        else if(this.config.mode == SessionMode.RenderTime)
+        {
+            this.render_time?.set_time_origin(time_origin);
+        }
+
         let projection_matrix = Layer.compute_projection_matrix() as Matrix;
         let resolution_width = this.config.resolution;
         let resolution_height = this.config.resolution;
@@ -404,7 +418,7 @@ export class Session
             return this.on_shutdown();
         }
 
-        if(this.config.mode == SessionMode.ReplayMethod || this.config.mode == SessionMode.ReplayGroundTruth)
+        if(this.config.mode == SessionMode.ReplayMethod || this.config.mode == SessionMode.ReplayGroundTruth || this.config.mode == SessionMode.RenderTime)
         {
             this.on_request();
         }
@@ -564,6 +578,11 @@ export class Session
                 request.view_matrices[0] = transform.dst_transform as Matrix;
                 request.export_file_names[this.wrapper.ExportType.EXPORT_TYPE_COLOR.value] = this.config.output_path + "color_ground_truth/color_ground_truth_" + this.request_counter + ".ppm";
             }
+
+            else if(this.config.mode == SessionMode.RenderTime)
+            {
+                request.view_matrices = Layer.compute_view_matrices(transform.src_position) as MatrixArray;
+            }
         }
 
         if(!this.connection.send_render_request(request))
@@ -672,7 +691,7 @@ export class Session
             return this.on_shutdown();
         }
 
-        if(this.config.mode == SessionMode.ReplayMethod)
+        if(this.config.mode == SessionMode.ReplayMethod || this.config.mode == SessionMode.RenderTime)
         {
             let response_complete = true;
 
@@ -900,9 +919,33 @@ export class Session
         view_image_size[0] = this.config.resolution;
         view_image_size[1] = this.config.resolution;
 
-        this.renderer.render(this.display, this.frame_active, projection_matrix, view_matrix, view_image_size);
+        if(this.config.mode == SessionMode.RenderTime)
+        {
+            const form = this.frame_active.layers[0].form;
 
-        if(this.config.mode == SessionMode.ReplayMethod || this.config.mode == SessionMode.ReplayGroundTruth)
+            if(form == null)
+            {
+                log_error("[Session] Can't form of active frame!");
+
+                return this.on_shutdown();
+            }
+
+            this.render_time?.begin(form.request_id);
+
+            for(let sample = 0; sample < SESSION_RENDER_TIME_SAMPLE_COUNT; sample++)
+            {
+                this.renderer.render(this.display, this.frame_active, projection_matrix, view_matrix, view_image_size);
+            }
+
+            this.render_time?.end(form.request_id);
+        }
+
+        else
+        {
+            this.renderer.render(this.display, this.frame_active, projection_matrix, view_matrix, view_image_size);
+        }
+        
+        if(this.config.mode == SessionMode.ReplayMethod || this.config.mode == SessionMode.ReplayGroundTruth || this.config.mode == SessionMode.RenderTime)
         {
             const form = this.frame_active.layers[0].form;
 
@@ -956,6 +999,11 @@ export class Session
             {
                 await this.layer_metadata[layer_index].store(this.config.output_path + "metadata_layer_" + layer_index + ".json");
             }
+        }
+
+        else if(this.config.mode == SessionMode.RenderTime)
+        {
+            await this.render_time?.store(this.config.output_path + "render_time.json");
         }
 
         if(this.on_close != null)

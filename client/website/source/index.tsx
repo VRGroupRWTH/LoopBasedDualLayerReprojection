@@ -111,6 +111,9 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
         case "Replay Groundtruth":
             session_mode = SessionMode.ReplayGroundTruth;
             break;
+        case "Render Time":
+            session_mode = SessionMode.RenderTime;
+            break;
         default:
             break;
         }
@@ -346,6 +349,7 @@ const App : Component<{wrapper : WrapperModule}> = (props) =>
                                     <option>Benchmark</option>
                                     <option>Replay Method</option>
                                     <option>Replay Groundtruth</option>
+                                    <option>Render Time</option>
                                 </SettingDropdown>
                                 <Show when={config.evaluation_mode != "Capture"}>
                                     <SettingFile label="Animation File" select_type="file" value={config.evaluation_animation_file} set_value={value => set_config("evaluation_animation_file", value)}></SettingFile>
